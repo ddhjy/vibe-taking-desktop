@@ -3,6 +3,8 @@ PROJECT_DIR := AutoPaste
 PROJECT_FILE := $(PROJECT_DIR)/AutoPaste.xcodeproj
 SCHEME := $(APP_NAME)
 CONFIGURATION := Release
+INFO_PLIST := $(PROJECT_DIR)/AutoPaste/Resources/Info.plist
+ENTITLEMENTS_FILE := $(PROJECT_DIR)/AutoPaste/Resources/AutoPaste.entitlements
 
 DERIVED_DATA := build/derived
 BUILD_APP_PATH := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME).app
@@ -10,7 +12,8 @@ RELEASE_DIR := dist/release
 RELEASE_APP := $(RELEASE_DIR)/$(APP_NAME).app
 APPLICATIONS_DIR ?= /Applications
 INSTALL_APP := $(APPLICATIONS_DIR)/$(APP_NAME).app
-VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" $(PROJECT_DIR)/AutoPaste/Resources/Info.plist 2>/dev/null || echo 1.0.0)
+APP_BUNDLE_ID := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$(INFO_PLIST)" 2>/dev/null || echo com.autopaste.app)
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(INFO_PLIST)" 2>/dev/null || echo 1.0.0)
 RELEASE_ZIP := $(RELEASE_DIR)/$(APP_NAME)-$(VERSION).zip
 
 .PHONY: help build release release-app release-zip install clean
@@ -53,6 +56,12 @@ install: build release-app
 	@if pgrep -f "/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" >/dev/null 2>&1; then \
 		pkill -f "/$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" >/dev/null 2>&1 || true; \
 	fi
+	@echo "Re-signing $(RELEASE_APP) with stable app identity ..."
+	codesign --force --sign - \
+		--entitlements "$(ENTITLEMENTS_FILE)" \
+		-r='designated => identifier "$(APP_BUNDLE_ID)"' \
+		"$(RELEASE_APP)"
+	codesign --verify --deep --strict --verbose=2 "$(RELEASE_APP)"
 	@echo "Reinstalling to $(INSTALL_APP) ..."
 	rm -rf "$(INSTALL_APP)"
 	cp -R "$(RELEASE_APP)" "$(INSTALL_APP)"
