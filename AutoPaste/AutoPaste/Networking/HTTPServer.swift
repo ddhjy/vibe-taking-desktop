@@ -78,22 +78,51 @@ final class HTTPServer {
     private func handleClient(_ fd: Int32, clientAddr: sockaddr_in) {
         defer { close(fd) }
 
-        var buffer = [UInt8](repeating: 0, count: 65536)
-        let bytesRead = recv(fd, &buffer, buffer.count, 0)
-        guard bytesRead > 0 else { return }
+        let separator = Data("\r\n\r\n".utf8)
+        var requestData = Data()
+        var headerRange: Range<Data.Index>?
+        var contentLength = 0
+        var headerPart = ""
 
-        let rawData = Data(buffer[0..<bytesRead])
-        guard let raw = String(data: rawData, encoding: .utf8) else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\"}")
+        while true {
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            let bytesRead = recv(fd, &buffer, buffer.count, 0)
+            guard bytesRead > 0 else { break }
+
+            requestData.append(buffer, count: bytesRead)
+
+            if headerRange == nil, let range = requestData.range(of: separator) {
+                headerRange = range
+
+                let headerData = requestData.subdata(in: 0..<range.lowerBound)
+                guard let parsedHeader = String(data: headerData, encoding: .utf8) else {
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\"}")
+                    return
+                }
+                headerPart = parsedHeader
+
+                for line in headerPart.components(separatedBy: "\r\n") {
+                    if line.lowercased().hasPrefix("content-length:") {
+                        let val = line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
+                        contentLength = Int(val) ?? 0
+                    }
+                }
+            }
+
+            if let headerRange {
+                let bodyStart = headerRange.upperBound
+                if requestData.count - bodyStart >= contentLength {
+                    break
+                }
+            }
+        }
+
+        guard let headerRange else {
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
             return
         }
 
-        guard raw.uppercased().hasPrefix("POST") else {
-            sendResponse(fd: fd, status: 405, body: "{\"error\": \"method not allowed\"}")
-            return
-        }
-
-        let requestLines = raw.components(separatedBy: "\r\n")
+        let requestLines = headerPart.components(separatedBy: "\r\n")
         guard let requestLine = requestLines.first else {
             sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
             return
@@ -105,41 +134,21 @@ final class HTTPServer {
             return
         }
 
+        let method = requestComponents[0].uppercased()
         let path = requestComponents[1]
 
-        guard let headerEnd = raw.range(of: "\r\n\r\n") else {
+        guard method == "POST" else {
+            sendResponse(fd: fd, status: 405, body: "{\"error\": \"method not allowed\"}")
+            return
+        }
+
+        let bodyStart = headerRange.upperBound
+        guard requestData.count >= bodyStart + contentLength else {
             sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
             return
         }
 
-        let headerPart = String(raw[raw.startIndex..<headerEnd.lowerBound])
-        var bodyString = String(raw[headerEnd.upperBound...])
-
-        var contentLength = 0
-        for line in headerPart.components(separatedBy: "\r\n") {
-            if line.lowercased().hasPrefix("content-length:") {
-                let val = line.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)
-                contentLength = Int(val) ?? 0
-            }
-        }
-
-        let bodyBytes = bodyString.utf8.count
-        if bodyBytes < contentLength {
-            let remaining = contentLength - bodyBytes
-            var extraBuf = [UInt8](repeating: 0, count: remaining)
-            var totalExtra = 0
-            while totalExtra < remaining {
-                let n = extraBuf.withUnsafeMutableBytes { ptr -> Int in
-                    guard let base = ptr.baseAddress else { return 0 }
-                    return recv(fd, base + totalExtra, remaining - totalExtra, 0)
-                }
-                if n <= 0 { break }
-                totalExtra += n
-            }
-            if totalExtra > 0 {
-                bodyString += String(data: Data(extraBuf[0..<totalExtra]), encoding: .utf8) ?? ""
-            }
-        }
+        let bodyData = requestData.subdata(in: bodyStart..<(bodyStart + contentLength))
 
         var contentType = ""
         for line in headerPart.components(separatedBy: "\r\n") {
@@ -148,19 +157,22 @@ final class HTTPServer {
             }
         }
 
-        var text = ""
         switch path {
         case "/":
+            let text: String
             if contentType.contains("application/json") {
-                guard let jsonData = bodyString.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                guard let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
                       let t = json["text"] as? String else {
                     sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
                     return
                 }
                 text = t
             } else {
-                text = bodyString
+                guard let plainText = String(data: bodyData, encoding: .utf8) else {
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\"}")
+                    return
+                }
+                text = plainText
             }
 
             guard !text.isEmpty else {
@@ -174,8 +186,7 @@ final class HTTPServer {
 
         case "/draft":
             guard contentType.contains("application/json"),
-                  let jsonData = bodyString.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
                   let t = json["text"] as? String else {
                 sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
                 return

@@ -34,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftSourceAddress: String?
     private var mirroredDraftCallbackPort: UInt16?
     private var draftStatusMessage = "Waiting for Fifteen sync."
+    private var lastActiveAppBeforePopover: NSRunningApplication?
 
     private let autoSendShortcutKeyDefaultsKey = "autoSendShortcutKey"
     private let autoSendShortcutKeyCodeDefaultsKey = "autoSendShortcutKeyCode"
@@ -154,6 +155,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let frontmostApp = NSWorkspace.shared.frontmostApplication,
+           frontmostApp.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            lastActiveAppBeforePopover = frontmostApp
+        }
+
         refreshDraftPanel()
         guard let button = statusItem.button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -196,13 +202,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func pasteMirroredDraft() {
         guard !mirroredDraftText.isEmpty else { return }
 
-        PasteService.copyAndPaste(text: mirroredDraftText, autoSend: autoSend)
+        let textToPaste = mirroredDraftText
+        popover.performClose(nil)
+
         setMirroredDraft(
             text: "",
             sourceAddress: mirroredDraftSourceAddress,
             callbackPort: mirroredDraftCallbackPort,
             status: "Pasted locally. Clearing Fifteen..."
         )
+
+        reactivateLastTargetAppIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [autoSend] in
+            PasteService.copyAndPaste(text: textToPaste, autoSend: autoSend)
+        }
         requestRemoteDraftClear(localAction: "Paste")
     }
 
@@ -216,6 +229,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             status: "Cleared locally. Clearing Fifteen..."
         )
         requestRemoteDraftClear(localAction: "Clear")
+    }
+
+    private func reactivateLastTargetAppIfNeeded() {
+        guard let targetApp = lastActiveAppBeforePopover,
+              !targetApp.isTerminated else { return }
+        targetApp.activate(options: [.activateIgnoringOtherApps])
     }
 
     private func requestRemoteDraftClear(localAction: String) {
@@ -750,7 +769,8 @@ private final class DraftPanelViewController: NSViewController {
 
     private let titleLabel = NSTextField(labelWithString: "Fifteen Draft")
     private let statusLabel = NSTextField(labelWithString: "Waiting for Fifteen sync.")
-    private let textView = NSTextView()
+    private let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 336, height: 190))
+    private let scrollView = NSScrollView()
     private let pasteButton = NSButton(title: "Paste", target: nil, action: nil)
     private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
     private let settingsButton = NSButton(title: "Settings", target: nil, action: nil)
@@ -766,11 +786,17 @@ private final class DraftPanelViewController: NSViewController {
 
         textView.isEditable = false
         textView.isSelectable = true
-        textView.drawsBackground = false
+        textView.drawsBackground = true
+        textView.backgroundColor = .textBackgroundColor
+        textView.textColor = .labelColor
         textView.font = .systemFont(ofSize: 13)
         textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: 336, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
 
-        let scrollView = NSScrollView()
         scrollView.borderType = .bezelBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -808,6 +834,16 @@ private final class DraftPanelViewController: NSViewController {
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
             scrollView.heightAnchor.constraint(equalToConstant: 190)
         ])
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
+        let size = scrollView.contentSize
+        textView.frame = NSRect(origin: .zero, size: size)
+        textView.minSize = NSSize(width: size.width, height: size.height)
+        textView.maxSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
     func update(text: String, status: String, canPaste: Bool, canClear: Bool) {
