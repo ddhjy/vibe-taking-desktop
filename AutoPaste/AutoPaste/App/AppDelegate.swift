@@ -11,6 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var statusItem: NSStatusItem!
+    private var statusMenu: NSMenu!
+    private var popover: NSPopover!
+    private var draftPanelController: DraftPanelViewController!
+
     private var titleItem: NSMenuItem!
     private var ipItem: NSMenuItem!
     private var portItem: NSMenuItem!
@@ -26,6 +30,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
 
+    private var mirroredDraftText = ""
+    private var mirroredDraftSourceAddress: String?
+    private var mirroredDraftCallbackPort: UInt16?
+    private var draftStatusMessage = "Waiting for Fifteen sync."
+
     private let autoSendShortcutKeyDefaultsKey = "autoSendShortcutKey"
     private let autoSendShortcutKeyCodeDefaultsKey = "autoSendShortcutKeyCode"
     private let autoSendShortcutModifiersDefaultsKey = "autoSendShortcutModifiers"
@@ -35,17 +44,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        updateIcon()
+        configureStatusButton()
         buildMenu()
+        buildPopover()
+        updateIcon()
+        refreshDraftPanel()
         startServer()
     }
 
-    private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
-    }
-
-    private func checkAccessibilityPermission() -> Bool {
-        return AXIsProcessTrusted()
+    private func configureStatusButton() {
+        guard let button = statusItem.button else { return }
+        button.target = self
+        button.action = #selector(handleStatusItemClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
     private func buildMenu() {
@@ -89,7 +100,177 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        statusItem.menu = menu
+        statusMenu = menu
+    }
+
+    private func buildPopover() {
+        draftPanelController = DraftPanelViewController()
+        draftPanelController.onPaste = { [weak self] in
+            self?.pasteMirroredDraft()
+        }
+        draftPanelController.onClear = { [weak self] in
+            self?.clearMirroredDraft()
+        }
+        draftPanelController.onOpenSettings = { [weak self] in
+            self?.openSettingsMenuFromPanel()
+        }
+
+        popover = NSPopover()
+        popover.animates = true
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 360, height: 300)
+        popover.contentViewController = draftPanelController
+    }
+
+    private func updateIcon() {
+        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
+    }
+
+    private func refreshDraftPanel() {
+        draftPanelController?.update(
+            text: mirroredDraftText,
+            status: draftStatusMessage,
+            canPaste: !mirroredDraftText.isEmpty && checkAccessibilityPermission(),
+            canClear: !mirroredDraftText.isEmpty
+        )
+    }
+
+    @objc private func handleStatusItemClick(_ sender: Any?) {
+        guard let event = NSApp.currentEvent else {
+            togglePopover()
+            return
+        }
+
+        if event.type == .rightMouseUp {
+            showStatusMenu()
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func togglePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+
+        refreshDraftPanel()
+        guard let button = statusItem.button else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func showStatusMenu() {
+        popover.performClose(nil)
+        refreshIPItem()
+        updateAccessibilityStatus()
+        statusItem.menu = statusMenu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    private func openSettingsMenuFromPanel() {
+        popover.performClose(nil)
+        DispatchQueue.main.async { [weak self] in
+            self?.showStatusMenu()
+        }
+    }
+
+    private func setMirroredDraft(
+        text: String,
+        sourceAddress: String?,
+        callbackPort: UInt16?,
+        status: String
+    ) {
+        mirroredDraftText = text
+        if let sourceAddress, !sourceAddress.isEmpty {
+            mirroredDraftSourceAddress = sourceAddress
+        }
+        if let callbackPort {
+            mirroredDraftCallbackPort = callbackPort
+        }
+        draftStatusMessage = status
+        refreshDraftPanel()
+    }
+
+    private func pasteMirroredDraft() {
+        guard !mirroredDraftText.isEmpty else { return }
+
+        PasteService.copyAndPaste(text: mirroredDraftText, autoSend: autoSend)
+        setMirroredDraft(
+            text: "",
+            sourceAddress: mirroredDraftSourceAddress,
+            callbackPort: mirroredDraftCallbackPort,
+            status: "Pasted locally. Clearing Fifteen..."
+        )
+        requestRemoteDraftClear(localAction: "Paste")
+    }
+
+    private func clearMirroredDraft() {
+        guard !mirroredDraftText.isEmpty else { return }
+
+        setMirroredDraft(
+            text: "",
+            sourceAddress: mirroredDraftSourceAddress,
+            callbackPort: mirroredDraftCallbackPort,
+            status: "Cleared locally. Clearing Fifteen..."
+        )
+        requestRemoteDraftClear(localAction: "Clear")
+    }
+
+    private func requestRemoteDraftClear(localAction: String) {
+        guard let host = mirroredDraftSourceAddress,
+              !host.isEmpty,
+              let callbackPort = mirroredDraftCallbackPort else {
+            draftStatusMessage = "\(localAction) finished locally. No Fifteen callback target."
+            refreshDraftPanel()
+            return
+        }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = host
+        components.port = Int(callbackPort)
+        components.path = "/draft/clear"
+
+        guard let url = components.url else {
+            draftStatusMessage = "\(localAction) finished locally. Fifteen callback URL is invalid."
+            refreshDraftPanel()
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 2
+
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                if let error {
+                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear failed: \(error.localizedDescription)"
+                    self.refreshDraftPanel()
+                    return
+                }
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear returned no response."
+                    self.refreshDraftPanel()
+                    return
+                }
+
+                if (200...299).contains(httpResponse.statusCode) {
+                    self.draftStatusMessage = "Fifteen draft cleared."
+                } else {
+                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear failed with status \(httpResponse.statusCode)."
+                }
+                self.refreshDraftPanel()
+            }
+        }.resume()
+    }
+
+    private func checkAccessibilityPermission() -> Bool {
+        AXIsProcessTrusted()
     }
 
     private func updateAccessibilityStatus() {
@@ -101,16 +282,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityItem.title = "Accessibility: Not Granted (Click to Fix)"
             accessibilityItem.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Not Granted")
         }
+        refreshDraftPanel()
     }
 
     @objc private func openAccessibilitySettings(_ sender: NSMenuItem) {
         let granted = checkAccessibilityPermission()
         if !granted {
-            // 触发系统权限请求对话框
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             AXIsProcessTrustedWithOptions(options)
         }
-        // 打开系统设置的辅助功能页面
+
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
@@ -474,7 +655,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func ipSummaryLines() -> [String] {
-        return localIPAddresses().map { "\($0.label): \($0.address)" }
+        localIPAddresses().map { "\($0.label): \($0.address)" }
     }
 
     private func ipMenuTitle(copied: Bool = false) -> String {
@@ -518,9 +699,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !serverRunning else { return }
         let srv = HTTPServer()
         srv.autoSend = autoSend
-        srv.onRequest = { text, autoSend in
+        srv.onPasteRequest = { text, autoSend in
             PasteService.copyAndPaste(text: text, autoSend: autoSend)
         }
+        srv.onDraftUpdate = { [weak self] update in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                let status: String
+                if update.text.isEmpty {
+                    status = update.remoteAddress.isEmpty ? "Draft cleared from Fifteen." : "Draft cleared from \(update.remoteAddress)."
+                } else {
+                    status = update.remoteAddress.isEmpty ? "Draft synced from Fifteen." : "Draft synced from \(update.remoteAddress)."
+                }
+
+                self.setMirroredDraft(
+                    text: update.text,
+                    sourceAddress: update.remoteAddress,
+                    callbackPort: update.callbackPort,
+                    status: status
+                )
+            }
+        }
+
         do {
             try srv.start(port: port)
             server = srv
@@ -534,10 +735,100 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopServer() {
         guard serverRunning else { return }
+        popover.performClose(nil)
         server?.stop()
         server = nil
         serverRunning = false
         updateIcon()
+    }
+}
+
+private final class DraftPanelViewController: NSViewController {
+    var onPaste: (() -> Void)?
+    var onClear: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
+
+    private let titleLabel = NSTextField(labelWithString: "Fifteen Draft")
+    private let statusLabel = NSTextField(labelWithString: "Waiting for Fifteen sync.")
+    private let textView = NSTextView()
+    private let pasteButton = NSButton(title: "Paste", target: nil, action: nil)
+    private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
+    private let settingsButton = NSButton(title: "Settings", target: nil, action: nil)
+
+    override func loadView() {
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 300))
+
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        statusLabel.font = .systemFont(ofSize: 12)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.maximumNumberOfLines = 2
+
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.font = .systemFont(ofSize: 13)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+
+        let scrollView = NSScrollView()
+        scrollView.borderType = .bezelBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+
+        pasteButton.bezelStyle = .rounded
+        pasteButton.target = self
+        pasteButton.action = #selector(handlePaste)
+
+        clearButton.bezelStyle = .rounded
+        clearButton.target = self
+        clearButton.action = #selector(handleClear)
+
+        settingsButton.bezelStyle = .rounded
+        settingsButton.target = self
+        settingsButton.action = #selector(handleOpenSettings)
+
+        let buttonRow = NSStackView(views: [pasteButton, clearButton, NSView(), settingsButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.alignment = .centerY
+        buttonRow.spacing = 8
+
+        let stack = NSStackView(views: [titleLabel, statusLabel, scrollView, buttonRow])
+        stack.orientation = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            scrollView.heightAnchor.constraint(equalToConstant: 190)
+        ])
+    }
+
+    func update(text: String, status: String, canPaste: Bool, canClear: Bool) {
+        if textView.string != text {
+            textView.string = text
+        }
+        statusLabel.stringValue = status
+        pasteButton.isEnabled = canPaste
+        clearButton.isEnabled = canClear
+    }
+
+    @objc private func handlePaste() {
+        onPaste?()
+    }
+
+    @objc private func handleClear() {
+        onClear?()
+    }
+
+    @objc private func handleOpenSettings() {
+        onOpenSettings?()
     }
 }
 

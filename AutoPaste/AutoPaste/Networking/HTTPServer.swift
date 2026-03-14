@@ -1,11 +1,18 @@
 import Foundation
 
 final class HTTPServer {
+    struct DraftUpdate {
+        let text: String
+        let remoteAddress: String
+        let callbackPort: UInt16?
+    }
+
     private var listenSocket: Int32 = -1
     private var running = false
     private let queue = DispatchQueue(label: "com.autopaste.httpserver", attributes: .concurrent)
     var autoSend = false
-    var onRequest: ((String, Bool) -> Void)?
+    var onPasteRequest: ((String, Bool) -> Void)?
+    var onDraftUpdate: ((DraftUpdate) -> Void)?
 
     func start(port: UInt16) throws {
         listenSocket = socket(AF_INET, SOCK_STREAM, 0)
@@ -63,12 +70,12 @@ final class HTTPServer {
             guard clientFd >= 0 else { continue }
 
             queue.async { [weak self] in
-                self?.handleClient(clientFd)
+                self?.handleClient(clientFd, clientAddr: clientAddr)
             }
         }
     }
 
-    private func handleClient(_ fd: Int32) {
+    private func handleClient(_ fd: Int32, clientAddr: sockaddr_in) {
         defer { close(fd) }
 
         var buffer = [UInt8](repeating: 0, count: 65536)
@@ -85,6 +92,20 @@ final class HTTPServer {
             sendResponse(fd: fd, status: 405, body: "{\"error\": \"method not allowed\"}")
             return
         }
+
+        let requestLines = raw.components(separatedBy: "\r\n")
+        guard let requestLine = requestLines.first else {
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            return
+        }
+
+        let requestComponents = requestLine.components(separatedBy: " ")
+        guard requestComponents.count >= 2 else {
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            return
+        }
+
+        let path = requestComponents[1]
 
         guard let headerEnd = raw.range(of: "\r\n\r\n") else {
             sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
@@ -128,27 +149,57 @@ final class HTTPServer {
         }
 
         var text = ""
-        if contentType.contains("application/json") {
-            guard let jsonData = bodyString.data(using: .utf8),
+        switch path {
+        case "/":
+            if contentType.contains("application/json") {
+                guard let jsonData = bodyString.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                      let t = json["text"] as? String else {
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
+                    return
+                }
+                text = t
+            } else {
+                text = bodyString
+            }
+
+            guard !text.isEmpty else {
+                sendResponse(fd: fd, status: 400, body: "{\"error\": \"empty text\"}")
+                return
+            }
+
+            let currentAutoSend = autoSend
+            onPasteRequest?(text, currentAutoSend)
+            sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
+
+        case "/draft":
+            guard contentType.contains("application/json"),
+                  let jsonData = bodyString.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   let t = json["text"] as? String else {
                 sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
                 return
             }
-            text = t
-        } else {
-            text = bodyString
+
+            let callbackPort: UInt16?
+            if let callbackPortNumber = json["callbackPort"] as? NSNumber {
+                let value = callbackPortNumber.uint16Value
+                callbackPort = value == 0 ? nil : value
+            } else {
+                callbackPort = nil
+            }
+
+            let update = DraftUpdate(
+                text: t,
+                remoteAddress: clientIPAddress(from: clientAddr),
+                callbackPort: callbackPort
+            )
+            onDraftUpdate?(update)
+            sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
+
+        default:
+            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\"}")
         }
-
-        guard !text.isEmpty else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"empty text\"}")
-            return
-        }
-
-        let currentAutoSend = autoSend
-        onRequest?(text, currentAutoSend)
-
-        sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
     }
 
     private func sendResponse(fd: Int32, status: Int, body: String) {
@@ -156,6 +207,7 @@ final class HTTPServer {
         switch status {
         case 200: statusText = "OK"
         case 400: statusText = "Bad Request"
+        case 404: statusText = "Not Found"
         case 405: statusText = "Method Not Allowed"
         case 500: statusText = "Internal Server Error"
         default: statusText = "Error"
@@ -165,6 +217,15 @@ final class HTTPServer {
         _ = response.withCString { ptr in
             send(fd, ptr, strlen(ptr), 0)
         }
+    }
+
+    private func clientIPAddress(from addr: sockaddr_in) -> String {
+        var addr = addr
+        var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &addr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
+            return ""
+        }
+        return String(cString: buffer)
     }
 
     enum ServerError: Error, LocalizedError {
