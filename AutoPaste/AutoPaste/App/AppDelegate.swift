@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             switch self {
             case .autoSendToggle: return "Auto Send Shortcut"
             case .inputToggle: return "Input Shortcut"
-            case .pasteDraft: return "Paste Shortcut"
+            case .pasteDraft: return "Paste / Send Shortcut"
             }
         }
 
@@ -40,7 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             switch self {
             case .autoSendToggle: return "Configure Auto Send Shortcut"
             case .inputToggle: return "Configure Input Shortcut"
-            case .pasteDraft: return "Configure Paste Shortcut"
+            case .pasteDraft: return "Configure Paste / Send Shortcut"
             }
         }
     }
@@ -159,8 +159,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildPopover() {
         draftPanelController = DraftPanelViewController()
-        draftPanelController.onPaste = { [weak self] in
-            self?.pasteMirroredDraft()
+        draftPanelController.onPrimaryAction = { [weak self] in
+            self?.performDraftPanelPrimaryAction()
         }
         draftPanelController.onStartInput = { [weak self] in
             self?.toggleInputSession()
@@ -217,11 +217,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshDraftPanel() {
+        let hasMirroredDraft = !mirroredDraftText.isEmpty
         draftPanelController?.update(
             text: mirroredDraftText,
             status: draftStatusMessage,
             startInputButtonTitle: isInputModeActive ? "Cancel Input" : "Start Input",
-            canPaste: !mirroredDraftText.isEmpty && checkAccessibilityPermission(),
+            primaryActionTitle: hasMirroredDraft ? "Paste" : "Send",
+            canTriggerPrimaryAction: checkAccessibilityPermission(),
             canStartInput: true
         )
     }
@@ -338,6 +340,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         requestRemoteDraftClear(context: .paste)
     }
 
+    private func performDraftPanelPrimaryAction() {
+        if mirroredDraftText.isEmpty {
+            sendFromLastTargetApp()
+        } else {
+            pasteMirroredDraft()
+        }
+    }
+
     private func toggleInputSession() {
         if isInputModeActive {
             cancelInputSession()
@@ -424,6 +434,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     autoSend: autoSend,
                     targetPID: targetApp?.processIdentifier
                 )
+            }
+        }
+    }
+
+    private func sendFromLastTargetApp() {
+        guard checkAccessibilityPermission() else { return }
+
+        let targetApp = lastActiveAppBeforePopover
+        popover.performClose(nil)
+        reactivateLastTargetAppIfNeeded()
+
+        waitUntilTargetAppIsFrontmost(targetApp) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                PasteService.send()
             }
         }
     }
@@ -786,7 +810,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case .pasteDraft:
             captureLastTargetContext()
-            pasteMirroredDraft()
+            performDraftPanelPrimaryAction()
         }
     }
 
@@ -1030,7 +1054,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 private final class DraftPanelViewController: NSViewController {
-    var onPaste: (() -> Void)?
+    var onPrimaryAction: (() -> Void)?
     var onStartInput: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
@@ -1113,14 +1137,22 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func update(text: String, status: String, startInputButtonTitle: String, canPaste: Bool, canStartInput: Bool) {
+    func update(
+        text: String,
+        status: String,
+        startInputButtonTitle: String,
+        primaryActionTitle: String,
+        canTriggerPrimaryAction: Bool,
+        canStartInput: Bool
+    ) {
         if textView.string != text {
             textView.string = text
         }
         statusLabel.stringValue = status
         startInputButton.title = startInputButtonTitle
         startInputButton.isEnabled = canStartInput
-        pasteButton.isEnabled = canPaste
+        pasteButton.title = primaryActionTitle
+        pasteButton.isEnabled = canTriggerPrimaryAction
     }
 
     @objc private func handleStartInput() {
@@ -1128,7 +1160,7 @@ private final class DraftPanelViewController: NSViewController {
     }
 
     @objc private func handlePaste() {
-        onPaste?()
+        onPrimaryAction?()
     }
 
     @objc private func handleOpenSettings() {

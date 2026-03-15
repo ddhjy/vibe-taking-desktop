@@ -129,4 +129,8 @@ enum PasteService {
             simulateSend()
         }
     }
+
+    static func send() {
+        simulateSend()
+    }
 }
