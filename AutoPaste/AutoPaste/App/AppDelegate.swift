@@ -30,17 +30,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         var menuTitlePrefix: String {
             switch self {
-            case .autoSendToggle: return "自动发送快捷键"
-            case .inputToggle: return "输入快捷键"
-            case .pasteDraft: return "粘贴/发送快捷键"
+            case .autoSendToggle: return "自动发送"
+            case .inputToggle: return "输入切换"
+            case .pasteDraft: return "粘贴/发送"
             }
         }
 
         var configurationTitle: String {
             switch self {
-            case .autoSendToggle: return "设置「自动发送」快捷键"
-            case .inputToggle: return "设置「输入切换」快捷键"
-            case .pasteDraft: return "设置「粘贴/发送」快捷键"
+            case .autoSendToggle: return "设置\u{201C}自动发送\u{201D}快捷键"
+            case .inputToggle: return "设置\u{201C}输入切换\u{201D}快捷键"
+            case .pasteDraft: return "设置\u{201C}粘贴/发送\u{201D}快捷键"
             }
         }
     }
@@ -49,7 +49,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenu: NSMenu!
     private var popover: NSPopover!
     private var draftPanelController: DraftPanelViewController!
-    private var inputModeIndicatorView: NSView?
 
     private var titleItem: NSMenuItem!
     private var ipItem: NSMenuItem!
@@ -71,7 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftText = ""
     private var mirroredDraftSourceAddress: String?
     private var mirroredDraftCallbackPort: UInt16?
-    private var draftStatusMessage = "点击「开始输入」，从手机同步文字到这里。"
+    private var draftStatusMessage = "点击\u{201C}开始输入\u{201D}，从手机同步文字到这里。"
     private var lastActiveAppBeforePopover: NSRunningApplication?
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
@@ -96,56 +95,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.target = self
         button.action = #selector(handleStatusItemClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-
-        let indicator = NSView(frame: .zero)
-        indicator.wantsLayer = true
-        indicator.layer?.backgroundColor = NSColor.systemGreen.cgColor
-        indicator.layer?.cornerRadius = 3
-        indicator.isHidden = true
-        button.addSubview(indicator)
-        inputModeIndicatorView = indicator
-        updateInputModeIndicatorLayout()
     }
+
+    // MARK: - Menu
 
     private func buildMenu() {
         let menu = NSMenu()
         menu.delegate = self
 
-        titleItem = NSMenuItem(title: "AutoPaste · :\(port)", action: nil, keyEquivalent: "")
+        titleItem = NSMenuItem(title: "AutoPaste", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
+        menu.addItem(.separator())
+
+        let aboutItem = NSMenuItem(title: "关于 AutoPaste", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
         menu.addItem(.separator())
 
         ipItem = NSMenuItem(title: ipMenuTitle(), action: #selector(copyIPSummary(_:)), keyEquivalent: "")
         ipItem.target = self
         menu.addItem(ipItem)
 
-        portItem = NSMenuItem(title: "端口：\(port)（点击修改）", action: #selector(changePort(_:)), keyEquivalent: "")
+        portItem = NSMenuItem(title: "端口：\(port)", action: #selector(changePort(_:)), keyEquivalent: "")
         portItem.target = self
         menu.addItem(portItem)
+
+        menu.addItem(.separator())
 
         toggleItem = NSMenuItem(title: "自动发送", action: #selector(toggleAutoSend(_:)), keyEquivalent: "")
         toggleItem.target = self
         toggleItem.state = autoSend ? .on : .off
         menu.addItem(toggleItem)
 
-        autoSendShortcutItem = NSMenuItem(title: "自动发送快捷键：未设置", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
+        let shortcutSubmenu = NSMenu()
+
+        autoSendShortcutItem = NSMenuItem(title: "自动发送：未设置", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
         autoSendShortcutItem.target = self
-        menu.addItem(autoSendShortcutItem)
+        shortcutSubmenu.addItem(autoSendShortcutItem)
 
-        inputShortcutItem = NSMenuItem(title: "输入快捷键：未设置", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
+        inputShortcutItem = NSMenuItem(title: "输入切换：未设置", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
         inputShortcutItem.target = self
-        menu.addItem(inputShortcutItem)
+        shortcutSubmenu.addItem(inputShortcutItem)
 
-        pasteShortcutItem = NSMenuItem(title: "粘贴/发送快捷键：未设置", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
+        pasteShortcutItem = NSMenuItem(title: "粘贴/发送：未设置", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
         pasteShortcutItem.target = self
-        menu.addItem(pasteShortcutItem)
+        shortcutSubmenu.addItem(pasteShortcutItem)
+
+        let shortcutItem = NSMenuItem(title: "快捷键", action: nil, keyEquivalent: "")
+        shortcutItem.submenu = shortcutSubmenu
+        menu.addItem(shortcutItem)
 
         applyShortcutsFromDefaults()
 
         menu.addItem(.separator())
 
-        accessibilityItem = NSMenuItem(title: "辅助功能：检查中…", action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
+        accessibilityItem = NSMenuItem(title: "辅助功能", action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
         accessibilityItem.target = self
         menu.addItem(accessibilityItem)
         updateAccessibilityStatus()
@@ -159,6 +164,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu = menu
     }
 
+    // MARK: - Popover
+
     private func buildPopover() {
         draftPanelController = DraftPanelViewController()
         draftPanelController.onPrimaryAction = { [weak self] in
@@ -170,53 +177,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         draftPanelController.onOpenSettings = { [weak self] in
             self?.openSettingsMenuFromPanel()
         }
+        draftPanelController.onDismiss = { [weak self] in
+            guard let self else { return }
+            if self.isInputModeActive {
+                self.cancelInputSession()
+            } else {
+                self.popover.performClose(nil)
+            }
+        }
 
         popover = NSPopover()
         popover.animates = true
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 300)
+        popover.contentSize = NSSize(width: 360, height: 310)
         popover.contentViewController = draftPanelController
     }
 
     private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
-        updateInputModeIndicatorLayout()
-        inputModeIndicatorView?.isHidden = !isInputModeActive
+        statusItem.button?.image = StatusBarIcon.make(
+            autoSend: autoSend,
+            running: serverRunning,
+            inputActive: isInputModeActive
+        )
         updatePopoverBehavior()
     }
 
     private func updatePopoverBehavior() {
         popover?.behavior = isInputModeActive ? .applicationDefined : .transient
-    }
-
-    private func updateInputModeIndicatorLayout() {
-        guard let button = statusItem.button,
-              let indicator = inputModeIndicatorView else { return }
-
-        let size: CGFloat = 6
-        let imageSize = button.image?.size ?? NSSize(width: 18, height: 18)
-        let imageOrigin = NSPoint(
-            x: (button.bounds.width - imageSize.width) / 2,
-            y: (button.bounds.height - imageSize.height) / 2
-        )
-        let imageRect = NSRect(origin: imageOrigin, size: imageSize)
-        let x = imageRect.maxX - size * 0.55
-        let y: CGFloat
-
-        if button.isFlipped {
-            y = imageRect.minY + size * 0.15
-        } else {
-            y = imageRect.maxY - size * 1.15
-        }
-
-        indicator.frame = NSRect(
-            x: x,
-            y: y,
-            width: size,
-            height: size
-        )
-        indicator.layer?.cornerRadius = size / 2
     }
 
     private func refreshDraftPanel() {
@@ -225,11 +213,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             text: mirroredDraftText,
             status: draftStatusMessage,
             startInputButtonTitle: isInputModeActive ? "停止输入" : "开始输入",
-            primaryActionTitle: hasMirroredDraft ? "粘贴到当前窗口" : "发送",
+            primaryActionTitle: hasMirroredDraft ? "粘贴" : "发送",
             canTriggerPrimaryAction: checkAccessibilityPermission(),
             canStartInput: true
         )
     }
+
+    // MARK: - Status Item Interaction
 
     @objc private func handleStatusItemClick(_ sender: Any?) {
         guard let event = NSApp.currentEvent else {
@@ -296,6 +286,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Draft Management
+
     private func setMirroredDraft(
         text: String,
         sourceAddress: String?,
@@ -321,7 +313,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func statusMessageForPasteCleared() -> String {
-        "已粘贴，同步完成 ✓"
+        "已粘贴，同步完成"
     }
 
     private func remoteClearLocalFallbackStatus(for context: RemoteDraftClearContext) -> String {
@@ -361,6 +353,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Input Session
+
     private func toggleInputSession() {
         if isInputModeActive {
             cancelInputSession()
@@ -395,6 +389,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.performClose(nil)
         requestRemoteDraftClear(context: .startInput)
     }
+
+    // MARK: - Target App
 
     private func reactivateLastTargetAppIfNeeded() {
         guard let targetApp = lastActiveAppBeforePopover,
@@ -467,6 +463,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Remote Sync
+
     private func requestRemoteDraftClear(context: RemoteDraftClearContext) {
         guard let host = mirroredDraftSourceAddress,
               !host.isEmpty,
@@ -529,6 +527,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }.resume()
     }
 
+    // MARK: - Accessibility
+
     private func checkAccessibilityPermission() -> Bool {
         AXIsProcessTrusted()
     }
@@ -536,11 +536,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateAccessibilityStatus() {
         let granted = checkAccessibilityPermission()
         if granted {
-            accessibilityItem.title = "辅助功能：已授权 ✓"
+            accessibilityItem.title = "辅助功能：已授权"
+            accessibilityItem.state = .on
             accessibilityItem.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "已授权")
         } else {
-            accessibilityItem.title = "辅助功能：未授权 — 点击修复"
-            accessibilityItem.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "未授权")
+            accessibilityItem.title = "辅助功能：未授权"
+            accessibilityItem.state = .off
+            accessibilityItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "未授权")
         }
         refreshDraftPanel()
     }
@@ -557,11 +559,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - About
+
+    @objc private func showAboutPanel(_ sender: NSMenuItem) {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    // MARK: - Port
+
     @objc private func changePort(_ sender: NSMenuItem) {
         let alert = NSAlert()
         alert.messageText = "修改监听端口"
         alert.informativeText = "输入新端口号（1–65535）："
-        alert.addButton(withTitle: "应用")
+        alert.addButton(withTitle: "更改")
         alert.addButton(withTitle: "取消")
 
         let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
@@ -576,14 +587,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard newPort != port else { return }
 
         port = newPort
-        titleItem.title = "AutoPaste · :\(port)"
-        portItem.title = "端口：\(port)（点击修改）"
+        portItem.title = "端口：\(port)"
 
         if serverRunning {
             stopServer()
             startServer()
         }
     }
+
+    // MARK: - Auto Send
 
     @objc private func toggleAutoSend(_ sender: NSMenuItem) {
         toggleAutoSendState()
@@ -595,6 +607,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         server?.autoSend = autoSend
         updateIcon()
     }
+
+    // MARK: - Shortcut Configuration
 
     @objc private func configureAutoSendShortcut(_ sender: NSMenuItem) {
         configureShortcut(for: .autoSendToggle)
@@ -615,16 +629,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = action.configurationTitle
         alert.informativeText = "在下方框内按下组合键录制快捷键。按 Delete 清除。"
-        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "设定")
         alert.addButton(withTitle: "取消")
 
-        let inputField = ShortcutCaptureField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let inputField = ShortcutCaptureField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         inputField.placeholderString = "按下快捷键…"
         inputField.isEditable = false
         inputField.isSelectable = false
         inputField.focusRingType = .exterior
         inputField.allowedModifiers = supportedShortcutModifiers
-        inputField.stringValue = currentShortcut.map { shortcutDisplay(key: $0.key, modifiers: $0.modifiers) } ?? "None"
+        inputField.stringValue = currentShortcut.map { shortcutDisplay(key: $0.key, modifiers: $0.modifiers) } ?? "无"
         inputField.onCapture = { [weak self, weak inputField] captured in
             guard let self else { return }
             selectedShortcut = captured.map {
@@ -632,7 +646,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             inputField?.stringValue = captured.map {
                 self.shortcutDisplay(key: $0.key, modifiers: $0.modifiers)
-            } ?? "None"
+            } ?? "无"
         }
 
         alert.accessoryView = inputField
@@ -653,6 +667,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         stopServer()
         NSApplication.shared.terminate(self)
     }
+
+    // MARK: - Shortcut Persistence
 
     private func applyShortcutsFromDefaults() {
         for action in GlobalShortcutAction.allCases {
@@ -687,7 +703,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 clearShortcutOnMenuOnly(for: action)
             }
-            showGlobalShortcutUnavailableError()
+            showGlobalShortcutUnavailableError(for: action)
             return
         }
 
@@ -746,6 +762,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modifiers = NSEvent.ModifierFlags(rawValue: UInt(rawModifiers)).intersection(supportedShortcutModifiers)
         return ShortcutConfig(key: key, keyCode: keyCode, modifiers: modifiers)
     }
+
+    // MARK: - Global Hot Keys
 
     private func registerGlobalHotKey(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) -> Bool {
         installGlobalHotKeyHandlerIfNeeded()
@@ -880,22 +898,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showGlobalShortcutUnavailableError() {
+    private func showGlobalShortcutUnavailableError(for action: GlobalShortcutAction? = nil) {
         let alert = NSAlert()
         alert.messageText = "快捷键冲突"
         alert.informativeText = "这个快捷键已被系统或其他应用占用，请换一个组合键。"
-        alert.runModal()
+        alert.addButton(withTitle: "重新设置")
+        alert.addButton(withTitle: "取消")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn, let action {
+            configureShortcut(for: action)
+        }
     }
 
     private func shortcutDisplay(key: String, modifiers: NSEvent.ModifierFlags) -> String {
-        var parts: [String] = []
-        if modifiers.contains(.command) { parts.append("Cmd") }
-        if modifiers.contains(.control) { parts.append("Ctrl") }
-        if modifiers.contains(.option) { parts.append("Option") }
-        if modifiers.contains(.shift) { parts.append("Shift") }
-        parts.append(key.uppercased())
-        return parts.joined(separator: "+")
+        var symbols = ""
+        if modifiers.contains(.control) { symbols += "⌃" }
+        if modifiers.contains(.option) { symbols += "⌥" }
+        if modifiers.contains(.shift) { symbols += "⇧" }
+        if modifiers.contains(.command) { symbols += "⌘" }
+        return symbols + key.uppercased()
     }
+
+    // MARK: - Network Info
 
     private func localIPAddresses() -> [(label: String, address: String, rank: Int)] {
         var addresses: [(label: String, address: String, rank: Int)] = []
@@ -978,14 +1002,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let lines = ipSummaryLines()
         guard !lines.isEmpty else { return "未检测到局域网地址" }
 
-        let status = copied ? "已复制 ✓" : "点击复制"
-        if lines.count == 1 {
-            return "\(lines[0]) — \(status)"
+        if copied {
+            if lines.count == 1 {
+                return "\(lines[0])（已复制）"
+            }
+            var displayLines = lines
+            displayLines[displayLines.count - 1] = "\(displayLines[displayLines.count - 1])（已复制）"
+            return displayLines.joined(separator: "\n")
         }
 
-        var displayLines = lines
-        displayLines[displayLines.count - 1] = "\(displayLines[displayLines.count - 1]) — \(status)"
-        return displayLines.joined(separator: "\n")
+        return lines.joined(separator: "\n")
     }
 
     private func ipCopyValue() -> String? {
@@ -1009,6 +1035,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ipTitleResetWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
     }
+
+    // MARK: - Server
 
     private func startServer() {
         guard !serverRunning else { return }
@@ -1067,58 +1095,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+// MARK: - Draft Panel View Controller
+
 private final class DraftPanelViewController: NSViewController {
     var onPrimaryAction: (() -> Void)?
     var onStartInput: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onDismiss: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "输入同步")
-    private let statusLabel = NSTextField(labelWithString: "点击「开始输入」，从手机同步文字到这里。")
-    private let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 336, height: 190))
+    private let statusLabel = NSTextField(labelWithString: "")
+    private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
+    private let placeholderLabel = NSTextField(labelWithString: "等待手机端输入…")
     private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
-    private let pasteButton = NSButton(title: "粘贴到当前窗口", target: nil, action: nil)
-    private let settingsButton = NSButton(title: "设置", target: nil, action: nil)
+    private let pasteButton = NSButton(title: "粘贴", target: nil, action: nil)
+    private let settingsButton = NSButton(frame: .zero)
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 300))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 310))
 
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.setAccessibilityLabel("标题")
+
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 2
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        placeholderLabel.font = .systemFont(ofSize: 13)
+        placeholderLabel.textColor = .tertiaryLabelColor
+        placeholderLabel.isHidden = false
 
         textView.isEditable = false
         textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
+        textView.drawsBackground = false
         textView.textColor = .labelColor
         textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainerInset = NSSize(width: 10, height: 10)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: 336, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
+        textView.setAccessibilityLabel("草稿内容")
 
-        scrollView.borderType = .bezelBorder
+        scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.documentView = textView
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 8
+        scrollView.layer?.borderWidth = 1
+        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
 
         startInputButton.bezelStyle = .rounded
         startInputButton.target = self
         startInputButton.action = #selector(handleStartInput)
+        startInputButton.setAccessibilityLabel("切换输入模式")
 
         pasteButton.bezelStyle = .rounded
+        pasteButton.keyEquivalent = "\r"
         pasteButton.target = self
         pasteButton.action = #selector(handlePaste)
+        pasteButton.setAccessibilityLabel("粘贴到当前窗口")
 
+        settingsButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
         settingsButton.bezelStyle = .rounded
+        settingsButton.isBordered = false
+        settingsButton.imagePosition = .imageOnly
         settingsButton.target = self
         settingsButton.action = #selector(handleOpenSettings)
+        settingsButton.setAccessibilityLabel("打开设置")
 
         let buttonRow = NSStackView(views: [startInputButton, pasteButton, NSView(), settingsButton])
         buttonRow.orientation = .horizontal
@@ -1128,16 +1180,22 @@ private final class DraftPanelViewController: NSViewController {
         let stack = NSStackView(views: [titleLabel, statusLabel, scrollView, buttonRow])
         stack.orientation = .vertical
         stack.spacing = 10
+        stack.setCustomSpacing(14, after: scrollView)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(stack)
+        view.addSubview(placeholderLabel)
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
-            scrollView.heightAnchor.constraint(equalToConstant: 190)
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            scrollView.heightAnchor.constraint(equalToConstant: 180),
+            placeholderLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 14),
+            placeholderLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 12),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -14)
         ])
     }
 
@@ -1151,6 +1209,10 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
+    override func cancelOperation(_ sender: Any?) {
+        onDismiss?()
+    }
+
     func update(
         text: String,
         status: String,
@@ -1162,6 +1224,7 @@ private final class DraftPanelViewController: NSViewController {
         if textView.string != text {
             textView.string = text
         }
+        placeholderLabel.isHidden = !text.isEmpty
         statusLabel.stringValue = status
         startInputButton.title = startInputButtonTitle
         startInputButton.isEnabled = canStartInput
@@ -1181,6 +1244,8 @@ private final class DraftPanelViewController: NSViewController {
         onOpenSettings?()
     }
 }
+
+// MARK: - Shortcut Capture Field
 
 private final class ShortcutCaptureField: NSTextField {
     var onCapture: (((key: String, keyCode: UInt32, modifiers: NSEvent.ModifierFlags)?) -> Void)?
@@ -1223,12 +1288,16 @@ private final class ShortcutCaptureField: NSTextField {
     }
 }
 
+// MARK: - NSMenuDelegate
+
 extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshIPItem()
         updateAccessibilityStatus()
     }
 }
+
+// MARK: - NSPopoverDelegate
 
 extension AppDelegate: NSPopoverDelegate {
     func popoverWillClose(_ notification: Notification) {
