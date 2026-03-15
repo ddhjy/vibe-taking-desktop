@@ -15,6 +15,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case paste
     }
 
+    private enum GlobalShortcutAction: UInt32, CaseIterable {
+        case autoSendToggle = 1
+        case inputToggle = 2
+        case pasteDraft = 3
+
+        var defaultsPrefix: String {
+            switch self {
+            case .autoSendToggle: return "autoSend"
+            case .inputToggle: return "inputToggle"
+            case .pasteDraft: return "pasteDraft"
+            }
+        }
+
+        var menuTitlePrefix: String {
+            switch self {
+            case .autoSendToggle: return "Auto Send Shortcut"
+            case .inputToggle: return "Input Shortcut"
+            case .pasteDraft: return "Paste Shortcut"
+            }
+        }
+
+        var configurationTitle: String {
+            switch self {
+            case .autoSendToggle: return "Configure Auto Send Shortcut"
+            case .inputToggle: return "Configure Input Shortcut"
+            case .pasteDraft: return "Configure Paste Shortcut"
+            }
+        }
+    }
+
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
     private var popover: NSPopover!
@@ -25,7 +55,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var ipItem: NSMenuItem!
     private var portItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
-    private var configureShortcutItem: NSMenuItem!
+    private var autoSendShortcutItem: NSMenuItem!
+    private var inputShortcutItem: NSMenuItem!
+    private var pasteShortcutItem: NSMenuItem!
     private var accessibilityItem: NSMenuItem!
 
     private var port: UInt16 = 7788
@@ -33,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var server: HTTPServer?
     private var serverRunning = false
     private var ipTitleResetWorkItem: DispatchWorkItem?
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [GlobalShortcutAction: EventHotKeyRef] = [:]
     private var hotKeyHandler: EventHandlerRef?
 
     private var mirroredDraftText = ""
@@ -44,12 +76,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
 
-    private let autoSendShortcutKeyDefaultsKey = "autoSendShortcutKey"
-    private let autoSendShortcutKeyCodeDefaultsKey = "autoSendShortcutKeyCode"
-    private let autoSendShortcutModifiersDefaultsKey = "autoSendShortcutModifiers"
     private let supportedShortcutModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
-    private let autoSendHotKeySignature: OSType = 0x41535348 // ASSH
-    private let autoSendHotKeyID: UInt32 = 1
+    private let globalHotKeySignature: OSType = 0x41505348 // APSH
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -99,11 +127,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.state = autoSend ? .on : .off
         menu.addItem(toggleItem)
 
-        configureShortcutItem = NSMenuItem(title: "Auto Send Shortcut: None", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
-        configureShortcutItem.target = self
-        menu.addItem(configureShortcutItem)
+        autoSendShortcutItem = NSMenuItem(title: "Auto Send Shortcut: None", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
+        autoSendShortcutItem.target = self
+        menu.addItem(autoSendShortcutItem)
 
-        applyAutoSendShortcutFromDefaults()
+        inputShortcutItem = NSMenuItem(title: "Input Shortcut: None", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
+        inputShortcutItem.target = self
+        menu.addItem(inputShortcutItem)
+
+        pasteShortcutItem = NSMenuItem(title: "Paste Shortcut: None", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
+        pasteShortcutItem.target = self
+        menu.addItem(pasteShortcutItem)
+
+        applyShortcutsFromDefaults()
 
         menu.addItem(.separator())
 
@@ -127,7 +163,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pasteMirroredDraft()
         }
         draftPanelController.onStartInput = { [weak self] in
-            self?.startInputSession()
+            self?.toggleInputSession()
         }
         draftPanelController.onOpenSettings = { [weak self] in
             self?.openSettingsMenuFromPanel()
@@ -184,6 +220,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         draftPanelController?.update(
             text: mirroredDraftText,
             status: draftStatusMessage,
+            startInputButtonTitle: isInputModeActive ? "Cancel Input" : "Start Input",
             canPaste: !mirroredDraftText.isEmpty && checkAccessibilityPermission(),
             canStartInput: true
         )
@@ -208,6 +245,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             popover.performClose(nil)
+            return
+        }
+
+        showPopoverIfNeeded()
+    }
+
+    private func showPopoverIfNeeded() {
+        if popover.isShown {
+            refreshDraftPanel()
             return
         }
 
@@ -291,11 +337,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             status: "Pasted locally. Clearing Fifteen..."
         )
 
-        reactivateLastTargetAppIfNeeded()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [autoSend] in
-            PasteService.copyAndPaste(text: textToPaste, autoSend: autoSend)
-        }
+        pasteIntoLastTargetApp(textToPaste)
         requestRemoteDraftClear(context: .paste)
+    }
+
+    private func toggleInputSession() {
+        if isInputModeActive {
+            cancelInputSession()
+        } else {
+            startInputSession()
+        }
     }
 
     private func startInputSession() {
@@ -312,10 +363,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         requestRemoteDraftClear(context: .startInput)
     }
 
+    private func cancelInputSession() {
+        isInputModeActive = false
+        pendingRemoteDraftClearContext = .startInput
+        mirroredDraftText = ""
+        draftStatusMessage = "Input mode cancelled. Clearing Fifteen..."
+        updateIcon()
+        refreshDraftPanel()
+        popover.performClose(nil)
+        requestRemoteDraftClear(context: .startInput)
+    }
+
     private func reactivateLastTargetAppIfNeeded() {
         guard let targetApp = lastActiveAppBeforePopover,
               !targetApp.isTerminated else { return }
         targetApp.activate(options: [.activateIgnoringOtherApps])
+    }
+
+    private func pasteIntoLastTargetApp(_ text: String) {
+        reactivateLastTargetAppIfNeeded()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [autoSend] in
+            PasteService.copyAndPaste(text: text, autoSend: autoSend)
+        }
     }
 
     private func requestRemoteDraftClear(context: RemoteDraftClearContext) {
@@ -448,11 +518,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func configureAutoSendShortcut(_ sender: NSMenuItem) {
-        let currentShortcut = currentAutoSendShortcut()
+        configureShortcut(for: .autoSendToggle)
+    }
+
+    @objc private func configureInputShortcut(_ sender: NSMenuItem) {
+        configureShortcut(for: .inputToggle)
+    }
+
+    @objc private func configurePasteShortcut(_ sender: NSMenuItem) {
+        configureShortcut(for: .pasteDraft)
+    }
+
+    private func configureShortcut(for action: GlobalShortcutAction) {
+        let currentShortcut = currentShortcut(for: action)
         var selectedShortcut: ShortcutConfig? = currentShortcut
 
         let alert = NSAlert()
-        alert.messageText = "Configure Auto Send Shortcut"
+        alert.messageText = action.configurationTitle
         alert.informativeText = "Click the box and press a global shortcut. Press Delete to clear."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -481,81 +563,99 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard response == .alertFirstButtonReturn else { return }
 
         if let selectedShortcut {
-            saveAutoSendShortcut(selectedShortcut)
+            saveShortcut(selectedShortcut, for: action)
         } else {
-            clearAutoSendShortcut()
+            clearShortcut(for: action)
         }
     }
 
     @objc private func quitApp(_ sender: NSMenuItem) {
-        unregisterGlobalHotKey()
+        unregisterAllGlobalHotKeys()
         stopServer()
         NSApplication.shared.terminate(self)
     }
 
-    private func applyAutoSendShortcutFromDefaults() {
-        guard let shortcut = currentAutoSendShortcut() else {
-            unregisterGlobalHotKey()
-            clearShortcutOnMenuOnly()
-            return
-        }
-
-        unregisterGlobalHotKey()
-        if registerGlobalHotKey(shortcut) {
-            applyShortcutToMenu(shortcut)
-        } else {
-            configureShortcutItem.title = "Auto Send Shortcut: \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers)) (Unavailable)"
-            print("Failed to register global shortcut: \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))")
+    private func applyShortcutsFromDefaults() {
+        for action in GlobalShortcutAction.allCases {
+            applyShortcutFromDefaults(for: action)
         }
     }
 
-    private func saveAutoSendShortcut(_ shortcut: ShortcutConfig) {
-        let previousShortcut = currentAutoSendShortcut()
+    private func applyShortcutFromDefaults(for action: GlobalShortcutAction) {
+        guard let shortcut = currentShortcut(for: action) else {
+            unregisterGlobalHotKey(for: action)
+            clearShortcutOnMenuOnly(for: action)
+            return
+        }
 
-        unregisterGlobalHotKey()
-        guard registerGlobalHotKey(shortcut) else {
+        unregisterGlobalHotKey(for: action)
+        if registerGlobalHotKey(shortcut, for: action) {
+            applyShortcutToMenu(shortcut, for: action)
+        } else {
+            shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers)) (Unavailable)"
+            print("Failed to register global shortcut for \(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))")
+        }
+    }
+
+    private func saveShortcut(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
+        let previousShortcut = currentShortcut(for: action)
+
+        unregisterGlobalHotKey(for: action)
+        guard registerGlobalHotKey(shortcut, for: action) else {
             if let previousShortcut {
-                _ = registerGlobalHotKey(previousShortcut)
-                applyShortcutToMenu(previousShortcut)
+                _ = registerGlobalHotKey(previousShortcut, for: action)
+                applyShortcutToMenu(previousShortcut, for: action)
             } else {
-                clearShortcutOnMenuOnly()
+                clearShortcutOnMenuOnly(for: action)
             }
             showGlobalShortcutUnavailableError()
             return
         }
 
         let defaults = UserDefaults.standard
-        defaults.set(shortcut.key, forKey: autoSendShortcutKeyDefaultsKey)
-        defaults.set(Int(shortcut.keyCode), forKey: autoSendShortcutKeyCodeDefaultsKey)
-        defaults.set(Int(shortcut.modifiers.rawValue), forKey: autoSendShortcutModifiersDefaultsKey)
-        applyShortcutToMenu(shortcut)
+        defaults.set(shortcut.key, forKey: shortcutDefaultsKey(for: action, suffix: "Key"))
+        defaults.set(Int(shortcut.keyCode), forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode"))
+        defaults.set(Int(shortcut.modifiers.rawValue), forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
+        applyShortcutToMenu(shortcut, for: action)
     }
 
-    private func clearAutoSendShortcut() {
+    private func clearShortcut(for action: GlobalShortcutAction) {
         let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: autoSendShortcutKeyDefaultsKey)
-        defaults.removeObject(forKey: autoSendShortcutKeyCodeDefaultsKey)
-        defaults.removeObject(forKey: autoSendShortcutModifiersDefaultsKey)
-        unregisterGlobalHotKey()
-        clearShortcutOnMenuOnly()
+        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "Key"))
+        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode"))
+        defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
+        unregisterGlobalHotKey(for: action)
+        clearShortcutOnMenuOnly(for: action)
     }
 
-    private func clearShortcutOnMenuOnly() {
-        configureShortcutItem.title = "Auto Send Shortcut: None"
+    private func clearShortcutOnMenuOnly(for action: GlobalShortcutAction) {
+        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): None"
     }
 
-    private func applyShortcutToMenu(_ shortcut: ShortcutConfig) {
-        configureShortcutItem.title = "Auto Send Shortcut: \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))"
+    private func applyShortcutToMenu(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
+        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))"
     }
 
-    private func currentAutoSendShortcut() -> ShortcutConfig? {
+    private func shortcutMenuItem(for action: GlobalShortcutAction) -> NSMenuItem? {
+        switch action {
+        case .autoSendToggle: return autoSendShortcutItem
+        case .inputToggle: return inputShortcutItem
+        case .pasteDraft: return pasteShortcutItem
+        }
+    }
+
+    private func shortcutDefaultsKey(for action: GlobalShortcutAction, suffix: String) -> String {
+        "\(action.defaultsPrefix)Shortcut\(suffix)"
+    }
+
+    private func currentShortcut(for action: GlobalShortcutAction) -> ShortcutConfig? {
         let defaults = UserDefaults.standard
-        guard let key = defaults.string(forKey: autoSendShortcutKeyDefaultsKey), !key.isEmpty else {
+        guard let key = defaults.string(forKey: shortcutDefaultsKey(for: action, suffix: "Key")), !key.isEmpty else {
             return nil
         }
 
         let keyCode: UInt32
-        if let keyCodeNumber = defaults.object(forKey: autoSendShortcutKeyCodeDefaultsKey) as? NSNumber {
+        if let keyCodeNumber = defaults.object(forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode")) as? NSNumber {
             keyCode = keyCodeNumber.uint32Value
         } else if let legacyKeyCode = legacyKeyCode(for: key) {
             keyCode = legacyKeyCode
@@ -563,15 +663,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
-        let rawModifiers = defaults.integer(forKey: autoSendShortcutModifiersDefaultsKey)
+        let rawModifiers = defaults.integer(forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
         let modifiers = NSEvent.ModifierFlags(rawValue: UInt(rawModifiers)).intersection(supportedShortcutModifiers)
         return ShortcutConfig(key: key, keyCode: keyCode, modifiers: modifiers)
     }
 
-    private func registerGlobalHotKey(_ shortcut: ShortcutConfig) -> Bool {
+    private func registerGlobalHotKey(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) -> Bool {
         installGlobalHotKeyHandlerIfNeeded()
 
-        let hotKeyID = EventHotKeyID(signature: autoSendHotKeySignature, id: autoSendHotKeyID)
+        let hotKeyID = EventHotKeyID(signature: globalHotKeySignature, id: action.rawValue)
+        var hotKeyRef: EventHotKeyRef?
         let status = RegisterEventHotKey(
             shortcut.keyCode,
             carbonModifiers(from: shortcut.modifiers),
@@ -580,13 +681,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             0,
             &hotKeyRef
         )
+        if status == noErr, let hotKeyRef {
+            hotKeyRefs[action] = hotKeyRef
+        }
         return status == noErr
     }
 
-    private func unregisterGlobalHotKey() {
-        guard let hotKeyRef else { return }
+    private func unregisterGlobalHotKey(for action: GlobalShortcutAction) {
+        guard let hotKeyRef = hotKeyRefs[action] else { return }
         UnregisterEventHotKey(hotKeyRef)
-        self.hotKeyRef = nil
+        hotKeyRefs[action] = nil
+    }
+
+    private func unregisterAllGlobalHotKeys() {
+        for action in GlobalShortcutAction.allCases {
+            unregisterGlobalHotKey(for: action)
+        }
     }
 
     private func installGlobalHotKeyHandlerIfNeeded() {
@@ -616,12 +726,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         guard status == noErr else { return status }
-        guard hotKeyID.signature == autoSendHotKeySignature, hotKeyID.id == autoSendHotKeyID else { return noErr }
+        guard hotKeyID.signature == globalHotKeySignature,
+              let action = GlobalShortcutAction(rawValue: hotKeyID.id) else { return noErr }
 
         DispatchQueue.main.async { [weak self] in
-            self?.toggleAutoSendState()
+            self?.performGlobalShortcutAction(action)
         }
         return noErr
+    }
+
+    private func performGlobalShortcutAction(_ action: GlobalShortcutAction) {
+        switch action {
+        case .autoSendToggle:
+            toggleAutoSendState()
+        case .inputToggle:
+            toggleInputSession()
+            if isInputModeActive {
+                showPopoverIfNeeded()
+            }
+        case .pasteDraft:
+            pasteMirroredDraft()
+        }
     }
 
     private func carbonModifiers(from modifiers: NSEvent.ModifierFlags) -> UInt32 {
@@ -947,11 +1072,12 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func update(text: String, status: String, canPaste: Bool, canStartInput: Bool) {
+    func update(text: String, status: String, startInputButtonTitle: String, canPaste: Bool, canStartInput: Bool) {
         if textView.string != text {
             textView.string = text
         }
         statusLabel.stringValue = status
+        startInputButton.title = startInputButtonTitle
         startInputButton.isEnabled = canStartInput
         pasteButton.isEnabled = canPaste
     }
