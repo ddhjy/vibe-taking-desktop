@@ -4,9 +4,15 @@ import ApplicationServices
 import Carbon.HIToolbox
 
 enum PasteService {
-    private static let commandSendThreshold: CFTimeInterval = 0.4
+    private enum SendDecision: Equatable {
+        case deferredReturn
+        case commandReturn
+    }
+
+    private static let commandSendThreshold: TimeInterval = 0.3
     private static let sendStateQueue = DispatchQueue(label: "com.autopaste.send-state")
-    private static var lastReturnSendAt: CFAbsoluteTime?
+    private static var pendingReturnWorkItem: DispatchWorkItem?
+    private static var pendingReturnID: UUID?
 
     private static func eventSource() -> CGEventSource? {
         let source = CGEventSource(stateID: .combinedSessionState)
@@ -52,24 +58,40 @@ enum PasteService {
         pressCommandShortcut(CGKeyCode(kVK_ANSI_V))
     }
 
-    private static func shouldUseCommandReturnForSend() -> Bool {
-        sendStateQueue.sync {
-            let now = CFAbsoluteTimeGetCurrent()
-            guard let lastReturnSendAt, now - lastReturnSendAt <= commandSendThreshold else {
-                self.lastReturnSendAt = now
-                return false
+    private static func scheduleReturnSend() {
+        let sendID = UUID()
+        let workItem = DispatchWorkItem {
+            let shouldSendReturn = sendStateQueue.sync {
+                guard pendingReturnID == sendID else { return false }
+                pendingReturnWorkItem = nil
+                pendingReturnID = nil
+                return true
             }
 
-            self.lastReturnSendAt = nil
-            return true
+            guard shouldSendReturn else { return }
+            pressKey(CGKeyCode(kVK_Return))
         }
+
+        pendingReturnWorkItem = workItem
+        pendingReturnID = sendID
+        DispatchQueue.main.asyncAfter(deadline: .now() + commandSendThreshold, execute: workItem)
     }
 
     private static func simulateSend() {
-        if shouldUseCommandReturnForSend() {
+        let decision: SendDecision = sendStateQueue.sync {
+            if let pendingReturnWorkItem {
+                pendingReturnWorkItem.cancel()
+                self.pendingReturnWorkItem = nil
+                pendingReturnID = nil
+                return .commandReturn
+            }
+
+            scheduleReturnSend()
+            return .deferredReturn
+        }
+
+        if decision == .commandReturn {
             pressCommandShortcut(CGKeyCode(kVK_Return))
-        } else {
-            pressKey(CGKeyCode(kVK_Return))
         }
     }
 
