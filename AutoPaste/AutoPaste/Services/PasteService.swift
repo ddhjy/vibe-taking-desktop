@@ -67,52 +67,6 @@ enum PasteService {
         return value as? String
     }
 
-    private static func copySelectedRange(from element: AXUIElement) -> CFRange? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value)
-        guard result == .success, let axValue = value else { return nil }
-        guard CFGetTypeID(axValue) == AXValueGetTypeID() else { return nil }
-
-        let rangeValue = unsafeBitCast(axValue, to: AXValue.self)
-        guard AXValueGetType(rangeValue) == .cfRange else { return nil }
-
-        var range = CFRange()
-        guard AXValueGetValue(rangeValue, .cfRange, &range) else { return nil }
-        return range
-    }
-
-    private static func insertTextViaAccessibility(_ text: String, into element: AXUIElement) -> Bool {
-        guard let currentValue = copyStringAttribute(kAXValueAttribute as String, from: element),
-              let selectedRange = copySelectedRange(from: element) else {
-            return false
-        }
-
-        let currentNSString = currentValue as NSString
-        let insertionText = text as NSString
-        let safeLocation = max(0, min(selectedRange.location, currentNSString.length))
-        let safeLength = max(0, min(selectedRange.length, currentNSString.length - safeLocation))
-        let replacementRange = NSRange(location: safeLocation, length: safeLength)
-        let updatedValue = currentNSString.replacingCharacters(in: replacementRange, with: text)
-
-        let setValueResult = AXUIElementSetAttributeValue(
-            element,
-            kAXValueAttribute as CFString,
-            updatedValue as CFTypeRef
-        )
-        guard setValueResult == .success else { return false }
-
-        var caretRange = CFRange(location: safeLocation + insertionText.length, length: 0)
-        if let rangeValue = AXValueCreate(.cfRange, &caretRange) {
-            _ = AXUIElementSetAttributeValue(
-                element,
-                kAXSelectedTextRangeAttribute as CFString,
-                rangeValue
-            )
-        }
-
-        return true
-    }
-
     private static func copyAXChildren(from element: AXUIElement) -> [AXUIElement] {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
@@ -155,18 +109,9 @@ enum PasteService {
     static func copyAndPaste(
         text: String,
         autoSend: Bool,
-        focusedElement: AXUIElement? = nil,
         targetPID: pid_t? = nil
     ) {
         writeToPasteboard(text)
-
-        if let focusedElement, insertTextViaAccessibility(text, into: focusedElement) {
-            if autoSend {
-                usleep(150_000)
-                simulateSend()
-            }
-            return
-        }
 
         if performPasteMenuAction(targetPID: targetPID) {
             if autoSend {

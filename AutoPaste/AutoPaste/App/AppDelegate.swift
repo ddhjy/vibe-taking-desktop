@@ -73,8 +73,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftCallbackPort: UInt16?
     private var draftStatusMessage = "Click Start Input to sync from Fifteen."
     private var lastActiveAppBeforePopover: NSRunningApplication?
-    private var lastFocusedElementBeforePopover: AXUIElement?
-    private var lastFocusedWindowBeforePopover: AXUIElement?
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
 
@@ -413,75 +411,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               frontmostApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
 
         lastActiveAppBeforePopover = frontmostApp
-
-        guard checkAccessibilityPermission() else {
-            lastFocusedElementBeforePopover = nil
-            lastFocusedWindowBeforePopover = nil
-            return
-        }
-
-        let appElement = AXUIElementCreateApplication(frontmostApp.processIdentifier)
-        lastFocusedElementBeforePopover = copyAXElementAttribute(kAXFocusedUIElementAttribute as String, from: appElement)
-        lastFocusedWindowBeforePopover = copyAXElementAttribute(kAXFocusedWindowAttribute as String, from: appElement)
-    }
-
-    private func copyAXElementAttribute(_ attribute: String, from element: AXUIElement) -> AXUIElement? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-        guard result == .success, let value else { return nil }
-        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
-    @discardableResult
-    private func restoreLastFocusedElementIfNeeded() -> Bool {
-        guard checkAccessibilityPermission() else { return false }
-
-        var restored = false
-
-        if let window = lastFocusedWindowBeforePopover {
-            let result = AXUIElementSetAttributeValue(
-                window,
-                kAXMainAttribute as CFString,
-                kCFBooleanTrue
-            )
-            restored = restored || result == .success
-        }
-
-        if let focusedElement = lastFocusedElementBeforePopover {
-            let directResult = AXUIElementSetAttributeValue(
-                focusedElement,
-                kAXFocusedAttribute as CFString,
-                kCFBooleanTrue
-            )
-            if directResult == .success {
-                restored = true
-            } else if let targetApp = lastActiveAppBeforePopover {
-                let appElement = AXUIElementCreateApplication(targetApp.processIdentifier)
-                let appResult = AXUIElementSetAttributeValue(
-                    appElement,
-                    kAXFocusedUIElementAttribute as CFString,
-                    focusedElement
-                )
-                restored = restored || appResult == .success
-            }
-        }
-
-        return restored
     }
 
     private func pasteIntoLastTargetApp(_ text: String) {
         let targetApp = lastActiveAppBeforePopover
         reactivateLastTargetAppIfNeeded()
 
-        waitUntilTargetAppIsFrontmost(targetApp) { [weak self, autoSend] in
-            self?.restoreLastFocusedElementIfNeeded()
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        waitUntilTargetAppIsFrontmost(targetApp) { [autoSend] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
                 PasteService.copyAndPaste(
                     text: text,
                     autoSend: autoSend,
-                    focusedElement: self?.lastFocusedElementBeforePopover,
                     targetPID: targetApp?.processIdentifier
                 )
             }
