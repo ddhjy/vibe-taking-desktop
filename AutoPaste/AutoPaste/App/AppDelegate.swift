@@ -144,6 +144,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
         updateInputModeIndicatorLayout()
         inputModeIndicatorView?.isHidden = !isInputModeActive
+        updatePopoverBehavior()
+    }
+
+    private func updatePopoverBehavior() {
+        popover?.behavior = isInputModeActive ? .applicationDefined : .transient
     }
 
     private func updateInputModeIndicatorLayout() {
@@ -199,6 +204,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func togglePopover() {
         if popover.isShown {
+            if isInputModeActive {
+                return
+            }
             popover.performClose(nil)
             return
         }
@@ -271,9 +279,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !mirroredDraftText.isEmpty else { return }
 
         let textToPaste = mirroredDraftText
-        popover.performClose(nil)
         isInputModeActive = false
         updateIcon()
+        popover.performClose(nil)
         pendingRemoteDraftClearContext = .paste
 
         setMirroredDraft(
@@ -291,7 +299,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startInputSession() {
-        popover.performClose(nil)
         isInputModeActive = true
         updateIcon()
         pendingRemoteDraftClearContext = .startInput
@@ -302,7 +309,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             callbackPort: mirroredDraftCallbackPort,
             status: "Starting input. Clearing Fifteen..."
         )
-        reactivateLastTargetAppIfNeeded()
         requestRemoteDraftClear(context: .startInput)
     }
 
