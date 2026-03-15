@@ -131,7 +131,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
+        statusItem.button?.image = StatusBarIcon.make(
+            autoSend: autoSend,
+            running: serverRunning,
+            inputModeActive: isInputModeActive
+        )
     }
 
     private func refreshDraftPanel() {
@@ -139,8 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             text: mirroredDraftText,
             status: draftStatusMessage,
             canPaste: !mirroredDraftText.isEmpty && checkAccessibilityPermission(),
-            canStartInput: true,
-            isInputModeActive: isInputModeActive
+            canStartInput: true
         )
     }
 
@@ -233,6 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let textToPaste = mirroredDraftText
         popover.performClose(nil)
         isInputModeActive = false
+        updateIcon()
         pendingRemoteDraftClearContext = .paste
 
         setMirroredDraft(
@@ -252,6 +256,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startInputSession() {
         popover.performClose(nil)
         isInputModeActive = true
+        updateIcon()
         pendingRemoteDraftClearContext = .startInput
 
         setMirroredDraft(
@@ -821,7 +826,6 @@ private final class DraftPanelViewController: NSViewController {
     var onOpenSettings: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "Fifteen Input")
-    private let inputModeBadge = NSTextField(labelWithString: "INPUT MODE")
     private let statusLabel = NSTextField(labelWithString: "Click Start Input to sync from Fifteen.")
     private let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 336, height: 190))
     private let scrollView = NSScrollView()
@@ -833,16 +837,6 @@ private final class DraftPanelViewController: NSViewController {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 300))
 
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-
-        inputModeBadge.font = .monospacedSystemFont(ofSize: 11, weight: .bold)
-        inputModeBadge.textColor = .white
-        inputModeBadge.alignment = .center
-        inputModeBadge.wantsLayer = true
-        inputModeBadge.layer?.backgroundColor = NSColor.systemGreen.cgColor
-        inputModeBadge.layer?.cornerRadius = 6
-        inputModeBadge.isHidden = true
-        inputModeBadge.cell?.usesSingleLineMode = true
-
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.lineBreakMode = .byWordWrapping
@@ -884,12 +878,7 @@ private final class DraftPanelViewController: NSViewController {
         buttonRow.alignment = .centerY
         buttonRow.spacing = 8
 
-        let headerRow = NSStackView(views: [titleLabel, NSView(), inputModeBadge])
-        headerRow.orientation = .horizontal
-        headerRow.alignment = .centerY
-        headerRow.spacing = 8
-
-        let stack = NSStackView(views: [headerRow, statusLabel, scrollView, buttonRow])
+        let stack = NSStackView(views: [titleLabel, statusLabel, scrollView, buttonRow])
         stack.orientation = .vertical
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -901,8 +890,7 @@ private final class DraftPanelViewController: NSViewController {
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
-            scrollView.heightAnchor.constraint(equalToConstant: 190),
-            inputModeBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 88)
+            scrollView.heightAnchor.constraint(equalToConstant: 190)
         ])
     }
 
@@ -916,14 +904,13 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func update(text: String, status: String, canPaste: Bool, canStartInput: Bool, isInputModeActive: Bool) {
+    func update(text: String, status: String, canPaste: Bool, canStartInput: Bool) {
         if textView.string != text {
             textView.string = text
         }
         statusLabel.stringValue = status
         startInputButton.isEnabled = canStartInput
         pasteButton.isEnabled = canPaste
-        inputModeBadge.isHidden = !isInputModeActive
     }
 
     @objc private func handleStartInput() {
