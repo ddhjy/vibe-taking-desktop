@@ -30,17 +30,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         var menuTitlePrefix: String {
             switch self {
-            case .autoSendToggle: return "Auto Send Shortcut"
-            case .inputToggle: return "Input Shortcut"
-            case .pasteDraft: return "Paste / Send Shortcut"
+            case .autoSendToggle: return "自动发送快捷键"
+            case .inputToggle: return "输入快捷键"
+            case .pasteDraft: return "粘贴/发送快捷键"
             }
         }
 
         var configurationTitle: String {
             switch self {
-            case .autoSendToggle: return "Configure Auto Send Shortcut"
-            case .inputToggle: return "Configure Input Shortcut"
-            case .pasteDraft: return "Configure Paste / Send Shortcut"
+            case .autoSendToggle: return "设置「自动发送」快捷键"
+            case .inputToggle: return "设置「输入切换」快捷键"
+            case .pasteDraft: return "设置「粘贴/发送」快捷键"
             }
         }
     }
@@ -71,7 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftText = ""
     private var mirroredDraftSourceAddress: String?
     private var mirroredDraftCallbackPort: UInt16?
-    private var draftStatusMessage = "Click Start Input to sync from Fifteen."
+    private var draftStatusMessage = "点击「开始输入」，从手机同步文字到这里。"
     private var lastActiveAppBeforePopover: NSRunningApplication?
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
@@ -111,7 +111,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        titleItem = NSMenuItem(title: "AutoPaste  :\(port)", action: nil, keyEquivalent: "")
+        titleItem = NSMenuItem(title: "AutoPaste · :\(port)", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(.separator())
@@ -120,24 +120,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ipItem.target = self
         menu.addItem(ipItem)
 
-        portItem = NSMenuItem(title: "Port: \(port)", action: #selector(changePort(_:)), keyEquivalent: "")
+        portItem = NSMenuItem(title: "端口：\(port)（点击修改）", action: #selector(changePort(_:)), keyEquivalent: "")
         portItem.target = self
         menu.addItem(portItem)
 
-        toggleItem = NSMenuItem(title: "Auto Send", action: #selector(toggleAutoSend(_:)), keyEquivalent: "")
+        toggleItem = NSMenuItem(title: "自动发送", action: #selector(toggleAutoSend(_:)), keyEquivalent: "")
         toggleItem.target = self
         toggleItem.state = autoSend ? .on : .off
         menu.addItem(toggleItem)
 
-        autoSendShortcutItem = NSMenuItem(title: "Auto Send Shortcut: None", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
+        autoSendShortcutItem = NSMenuItem(title: "自动发送快捷键：未设置", action: #selector(configureAutoSendShortcut(_:)), keyEquivalent: "")
         autoSendShortcutItem.target = self
         menu.addItem(autoSendShortcutItem)
 
-        inputShortcutItem = NSMenuItem(title: "Input Shortcut: None", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
+        inputShortcutItem = NSMenuItem(title: "输入快捷键：未设置", action: #selector(configureInputShortcut(_:)), keyEquivalent: "")
         inputShortcutItem.target = self
         menu.addItem(inputShortcutItem)
 
-        pasteShortcutItem = NSMenuItem(title: "Paste Shortcut: None", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
+        pasteShortcutItem = NSMenuItem(title: "粘贴/发送快捷键：未设置", action: #selector(configurePasteShortcut(_:)), keyEquivalent: "")
         pasteShortcutItem.target = self
         menu.addItem(pasteShortcutItem)
 
@@ -145,14 +145,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        accessibilityItem = NSMenuItem(title: "Accessibility: Checking...", action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
+        accessibilityItem = NSMenuItem(title: "辅助功能：检查中…", action: #selector(openAccessibilitySettings(_:)), keyEquivalent: "")
         accessibilityItem.target = self
         menu.addItem(accessibilityItem)
         updateAccessibilityStatus()
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出 AutoPaste", action: #selector(quitApp(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -224,8 +224,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         draftPanelController?.update(
             text: mirroredDraftText,
             status: draftStatusMessage,
-            startInputButtonTitle: isInputModeActive ? "Cancel Input" : "Start Input",
-            primaryActionTitle: hasMirroredDraft ? "Paste" : "Send",
+            startInputButtonTitle: isInputModeActive ? "停止输入" : "开始输入",
+            primaryActionTitle: hasMirroredDraft ? "粘贴到当前窗口" : "发送",
             canTriggerPrimaryAction: checkAccessibilityPermission(),
             canStartInput: true
         )
@@ -315,21 +315,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func statusMessageForStartInputReady() -> String {
         if let sourceAddress = mirroredDraftSourceAddress, !sourceAddress.isEmpty {
-            return "Ready for input from \(sourceAddress)."
+            return "已连接 \(sourceAddress)，等待输入中…"
         }
-        return "Ready. Waiting for Fifteen input."
+        return "等待输入中…"
     }
 
     private func statusMessageForPasteCleared() -> String {
-        "Pasted. Fifteen draft cleared."
+        "已粘贴，同步完成 ✓"
     }
 
     private func remoteClearLocalFallbackStatus(for context: RemoteDraftClearContext) -> String {
         switch context {
         case .startInput:
-            return "Local draft cleared. Waiting for Fifteen input."
+            return "草稿已清除，等待输入中…"
         case .paste:
-            return "Pasted locally. No Fifteen callback target."
+            return "已粘贴（离线模式，未同步到手机）"
         }
     }
 
@@ -346,7 +346,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             text: "",
             sourceAddress: mirroredDraftSourceAddress,
             callbackPort: mirroredDraftCallbackPort,
-            status: "Pasted locally. Clearing Fifteen..."
+            status: "已粘贴，正在同步…"
         )
 
         pasteIntoLastTargetApp(textToPaste)
@@ -379,7 +379,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             text: "",
             sourceAddress: mirroredDraftSourceAddress,
             callbackPort: mirroredDraftCallbackPort,
-            status: "Starting input. Clearing Fifteen..."
+            status: "正在准备输入…"
         )
         requestRemoteDraftClear(context: .startInput)
     }
@@ -389,7 +389,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         shouldReopenPopoverAfterClose = false
         pendingRemoteDraftClearContext = .startInput
         mirroredDraftText = ""
-        draftStatusMessage = "Input mode cancelled. Clearing Fifteen..."
+        draftStatusMessage = "输入已停止"
         updateIcon()
         refreshDraftPanel()
         popover.performClose(nil)
@@ -485,7 +485,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let url = components.url else {
             pendingRemoteDraftClearContext = nil
-            draftStatusMessage = "Fifteen callback URL is invalid."
+            draftStatusMessage = "无法连接手机端，请检查网络连接。"
             refreshDraftPanel()
             return
         }
@@ -501,7 +501,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if let error {
                     guard self.pendingRemoteDraftClearContext == context else { return }
                     self.pendingRemoteDraftClearContext = nil
-                    self.draftStatusMessage = "Fifteen clear failed: \(error.localizedDescription)"
+                    self.draftStatusMessage = "同步失败：\(error.localizedDescription)"
                     self.refreshDraftPanel()
                     return
                 }
@@ -509,7 +509,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let httpResponse = response as? HTTPURLResponse else {
                     guard self.pendingRemoteDraftClearContext == context else { return }
                     self.pendingRemoteDraftClearContext = nil
-                    self.draftStatusMessage = "Fifteen clear returned no response."
+                    self.draftStatusMessage = "同步失败：手机端无响应。"
                     self.refreshDraftPanel()
                     return
                 }
@@ -522,7 +522,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         ? self.statusMessageForStartInputReady()
                         : self.statusMessageForPasteCleared()
                 } else {
-                    self.draftStatusMessage = "Fifteen clear failed with status \(httpResponse.statusCode)."
+                    self.draftStatusMessage = "同步失败：手机端返回错误，请重试。"
                 }
                 self.refreshDraftPanel()
             }
@@ -536,11 +536,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateAccessibilityStatus() {
         let granted = checkAccessibilityPermission()
         if granted {
-            accessibilityItem.title = "Accessibility: Granted"
-            accessibilityItem.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Granted")
+            accessibilityItem.title = "辅助功能：已授权 ✓"
+            accessibilityItem.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "已授权")
         } else {
-            accessibilityItem.title = "Accessibility: Not Granted (Click to Fix)"
-            accessibilityItem.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Not Granted")
+            accessibilityItem.title = "辅助功能：未授权 — 点击修复"
+            accessibilityItem.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "未授权")
         }
         refreshDraftPanel()
     }
@@ -559,10 +559,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func changePort(_ sender: NSMenuItem) {
         let alert = NSAlert()
-        alert.messageText = "Change Port"
-        alert.informativeText = "Enter the new port number:"
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "修改监听端口"
+        alert.informativeText = "输入新端口号（1–65535）："
+        alert.addButton(withTitle: "应用")
+        alert.addButton(withTitle: "取消")
 
         let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
         inputField.stringValue = String(port)
@@ -576,8 +576,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard newPort != port else { return }
 
         port = newPort
-        titleItem.title = "AutoPaste  :\(port)"
-        portItem.title = "Port: \(port)"
+        titleItem.title = "AutoPaste · :\(port)"
+        portItem.title = "端口：\(port)（点击修改）"
 
         if serverRunning {
             stopServer()
@@ -614,12 +614,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = action.configurationTitle
-        alert.informativeText = "Click the box and press a global shortcut. Press Delete to clear."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.informativeText = "在下方框内按下组合键录制快捷键。按 Delete 清除。"
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
 
         let inputField = ShortcutCaptureField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        inputField.placeholderString = "Press shortcut"
+        inputField.placeholderString = "按下快捷键…"
         inputField.isEditable = false
         inputField.isSelectable = false
         inputField.focusRingType = .exterior
@@ -671,7 +671,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if registerGlobalHotKey(shortcut, for: action) {
             applyShortcutToMenu(shortcut, for: action)
         } else {
-            shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers)) (Unavailable)"
+            shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：\(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))（冲突）"
             print("Failed to register global shortcut for \(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))")
         }
     }
@@ -708,11 +708,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func clearShortcutOnMenuOnly(for action: GlobalShortcutAction) {
-        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): None"
+        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：未设置"
     }
 
     private func applyShortcutToMenu(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
-        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))"
+        shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：\(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))"
     }
 
     private func shortcutMenuItem(for action: GlobalShortcutAction) -> NSMenuItem? {
@@ -882,8 +882,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showGlobalShortcutUnavailableError() {
         let alert = NSAlert()
-        alert.messageText = "Shortcut Unavailable"
-        alert.informativeText = "This global shortcut is already used by the system or another app."
+        alert.messageText = "快捷键冲突"
+        alert.informativeText = "这个快捷键已被系统或其他应用占用，请换一个组合键。"
         alert.runModal()
     }
 
@@ -924,7 +924,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let key = "\(name)|\(ip)"
             guard seen.insert(key).inserted else { continue }
 
-            addresses.append((label: "\(info.label)(\(name))", address: ip, rank: info.rank))
+            addresses.append((label: info.label, address: ip, rank: info.rank))
         }
 
         return addresses.sorted {
@@ -975,17 +975,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func ipMenuTitle(copied: Bool = false) -> String {
-        let status = copied ? "Copied" : "Click to Copy"
         let lines = ipSummaryLines()
-        guard !lines.isEmpty else { return "IP: Unknown (\(status))" }
+        guard !lines.isEmpty else { return "未检测到局域网地址" }
 
+        let status = copied ? "已复制 ✓" : "点击复制"
         if lines.count == 1 {
-            return "IP: \(lines[0]) (\(status))"
+            return "\(lines[0]) — \(status)"
         }
 
         var displayLines = lines
-        displayLines[0] = "IP: \(displayLines[0])"
-        displayLines[displayLines.count - 1] = "\(displayLines[displayLines.count - 1]) (\(status))"
+        displayLines[displayLines.count - 1] = "\(displayLines[displayLines.count - 1]) — \(status)"
         return displayLines.joined(separator: "\n")
     }
 
@@ -1031,10 +1030,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     case .paste:
                         status = self.statusMessageForPasteCleared()
                     case nil:
-                        status = update.remoteAddress.isEmpty ? "Draft cleared from Fifteen." : "Draft cleared from \(update.remoteAddress)."
+                        status = "草稿已清除"
                     }
                 } else {
-                    status = update.remoteAddress.isEmpty ? "Reading Fifteen input." : "Reading input from \(update.remoteAddress)."
+                    status = "正在接收输入…"
                 }
                 self.pendingRemoteDraftClearContext = nil
 
@@ -1073,13 +1072,13 @@ private final class DraftPanelViewController: NSViewController {
     var onStartInput: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
-    private let titleLabel = NSTextField(labelWithString: "Fifteen Input")
-    private let statusLabel = NSTextField(labelWithString: "Click Start Input to sync from Fifteen.")
+    private let titleLabel = NSTextField(labelWithString: "输入同步")
+    private let statusLabel = NSTextField(labelWithString: "点击「开始输入」，从手机同步文字到这里。")
     private let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 336, height: 190))
     private let scrollView = NSScrollView()
-    private let startInputButton = NSButton(title: "Start Input", target: nil, action: nil)
-    private let pasteButton = NSButton(title: "Paste", target: nil, action: nil)
-    private let settingsButton = NSButton(title: "Settings", target: nil, action: nil)
+    private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
+    private let pasteButton = NSButton(title: "粘贴到当前窗口", target: nil, action: nil)
+    private let settingsButton = NSButton(title: "设置", target: nil, action: nil)
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 300))

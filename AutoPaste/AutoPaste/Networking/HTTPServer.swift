@@ -96,7 +96,7 @@ final class HTTPServer {
 
                 let headerData = requestData.subdata(in: 0..<range.lowerBound)
                 guard let parsedHeader = String(data: headerData, encoding: .utf8) else {
-                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\"}")
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\", \"hint\": \"Body must be valid UTF-8\"}")
                     return
                 }
                 headerPart = parsedHeader
@@ -118,19 +118,19 @@ final class HTTPServer {
         }
 
         guard let headerRange else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed HTTP request\"}")
             return
         }
 
         let requestLines = headerPart.components(separatedBy: "\r\n")
         guard let requestLine = requestLines.first else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed HTTP request\"}")
             return
         }
 
         let requestComponents = requestLine.components(separatedBy: " ")
         guard requestComponents.count >= 2 else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed HTTP request\"}")
             return
         }
 
@@ -138,13 +138,13 @@ final class HTTPServer {
         let path = requestComponents[1]
 
         guard method == "POST" else {
-            sendResponse(fd: fd, status: 405, body: "{\"error\": \"method not allowed\"}")
+            sendResponse(fd: fd, status: 405, body: "{\"error\": \"method not allowed\", \"hint\": \"Use POST\"}")
             return
         }
 
         let bodyStart = headerRange.upperBound
         guard requestData.count >= bodyStart + contentLength else {
-            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed request\"}")
+            sendResponse(fd: fd, status: 400, body: "{\"error\": \"malformed HTTP request\"}")
             return
         }
 
@@ -163,20 +163,20 @@ final class HTTPServer {
             if contentType.contains("application/json") {
                 guard let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
                       let t = json["text"] as? String else {
-                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid JSON body\", \"hint\": \"Send valid JSON with Content-Type: application/json\"}")
                     return
                 }
                 text = t
             } else {
                 guard let plainText = String(data: bodyData, encoding: .utf8) else {
-                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\"}")
+                    sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid encoding\", \"hint\": \"Body must be valid UTF-8\"}")
                     return
                 }
                 text = plainText
             }
 
             guard !text.isEmpty else {
-                sendResponse(fd: fd, status: 400, body: "{\"error\": \"empty text\"}")
+                sendResponse(fd: fd, status: 400, body: "{\"error\": \"text is empty\", \"hint\": \"POST a non-empty text field\"}")
                 return
             }
 
@@ -188,7 +188,7 @@ final class HTTPServer {
             guard contentType.contains("application/json"),
                   let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
                   let t = json["text"] as? String else {
-                sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid json\"}")
+                sendResponse(fd: fd, status: 400, body: "{\"error\": \"invalid JSON body\", \"hint\": \"Send valid JSON with Content-Type: application/json\"}")
                 return
             }
 
@@ -209,7 +209,7 @@ final class HTTPServer {
             sendResponse(fd: fd, status: 200, body: "{\"ok\": true}")
 
         default:
-            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\"}")
+            sendResponse(fd: fd, status: 404, body: "{\"error\": \"not found\", \"hint\": \"POST to / or /draft\"}")
         }
     }
 
