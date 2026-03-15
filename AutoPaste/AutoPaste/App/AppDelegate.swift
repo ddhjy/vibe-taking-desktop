@@ -1159,7 +1159,6 @@ private final class DraftPanelViewController: NSViewController {
         startInputButton.setAccessibilityLabel("切换输入模式")
 
         pasteButton.bezelStyle = .rounded
-        pasteButton.keyEquivalent = "\r"
         pasteButton.target = self
         pasteButton.action = #selector(handlePaste)
         pasteButton.setAccessibilityLabel("粘贴到当前窗口")
