@@ -4,6 +4,10 @@ import ApplicationServices
 import Carbon.HIToolbox
 
 enum PasteService {
+    private static let commandSendThreshold: CFTimeInterval = 0.4
+    private static let sendStateQueue = DispatchQueue(label: "com.autopaste.send-state")
+    private static var lastReturnSendAt: CFAbsoluteTime?
+
     private static func eventSource() -> CGEventSource? {
         let source = CGEventSource(stateID: .combinedSessionState)
         source?.localEventsSuppressionInterval = 0
@@ -48,10 +52,25 @@ enum PasteService {
         pressCommandShortcut(CGKeyCode(kVK_ANSI_V))
     }
 
+    private static func shouldUseCommandReturnForSend() -> Bool {
+        sendStateQueue.sync {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard let lastReturnSendAt, now - lastReturnSendAt <= commandSendThreshold else {
+                self.lastReturnSendAt = now
+                return false
+            }
+
+            self.lastReturnSendAt = nil
+            return true
+        }
+    }
+
     private static func simulateSend() {
-        pressKey(CGKeyCode(kVK_Return))
-        usleep(100_000)
-        pressCommandShortcut(CGKeyCode(kVK_Return))
+        if shouldUseCommandReturnForSend() {
+            pressCommandShortcut(CGKeyCode(kVK_Return))
+        } else {
+            pressKey(CGKeyCode(kVK_Return))
+        }
     }
 
     private static func writeToPasteboard(_ text: String) {
