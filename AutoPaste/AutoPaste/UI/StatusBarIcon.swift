@@ -11,7 +11,7 @@ enum StatusBarIcon {
             symbolName = "doc.on.clipboard"
         }
 
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
         guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "AutoPaste")?
             .withSymbolConfiguration(config) else {
             return NSImage()
