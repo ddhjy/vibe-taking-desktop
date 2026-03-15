@@ -75,6 +75,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastActiveAppBeforePopover: NSRunningApplication?
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
+    private var isPopoverClosing = false
+    private var shouldReopenPopoverAfterClose = false
 
     private let supportedShortcutModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
     private let globalHotKeySignature: OSType = 0x41505348 // APSH
@@ -172,6 +174,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover.animates = true
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentSize = NSSize(width: 360, height: 300)
         popover.contentViewController = draftPanelController
     }
@@ -253,13 +256,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showPopoverIfNeeded()
     }
 
-    private func showPopoverIfNeeded() {
+    private func showPopoverIfNeeded(captureTargetContext: Bool = true) {
         if popover.isShown {
             refreshDraftPanel()
+            if isPopoverClosing {
+                shouldReopenPopoverAfterClose = true
+            }
             return
         }
 
-        captureLastTargetContext()
+        if isPopoverClosing {
+            shouldReopenPopoverAfterClose = true
+            return
+        }
+
+        if captureTargetContext {
+            captureLastTargetContext()
+        }
 
         refreshDraftPanel()
         guard let button = statusItem.button else { return }
@@ -358,6 +371,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startInputSession() {
         isInputModeActive = true
+        shouldReopenPopoverAfterClose = isPopoverClosing
         updateIcon()
         pendingRemoteDraftClearContext = .startInput
 
@@ -372,6 +386,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func cancelInputSession() {
         isInputModeActive = false
+        shouldReopenPopoverAfterClose = false
         pendingRemoteDraftClearContext = .startInput
         mirroredDraftText = ""
         draftStatusMessage = "Input mode cancelled. Clearing Fifteen..."
@@ -1213,5 +1228,25 @@ extension AppDelegate: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshIPItem()
         updateAccessibilityStatus()
+    }
+}
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverWillClose(_ notification: Notification) {
+        isPopoverClosing = true
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        isPopoverClosing = false
+
+        guard shouldReopenPopoverAfterClose, isInputModeActive else {
+            shouldReopenPopoverAfterClose = false
+            return
+        }
+
+        shouldReopenPopoverAfterClose = false
+        DispatchQueue.main.async { [weak self] in
+            self?.showPopoverIfNeeded(captureTargetContext: false)
+        }
     }
 }
