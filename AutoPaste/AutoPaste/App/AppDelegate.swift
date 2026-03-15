@@ -10,6 +10,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modifiers: NSEvent.ModifierFlags
     }
 
+    private enum RemoteDraftClearContext: Equatable {
+        case startInput
+        case paste
+    }
+
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
     private var popover: NSPopover!
@@ -33,8 +38,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftText = ""
     private var mirroredDraftSourceAddress: String?
     private var mirroredDraftCallbackPort: UInt16?
-    private var draftStatusMessage = "Waiting for Fifteen sync."
+    private var draftStatusMessage = "Click Start Input to sync from Fifteen."
     private var lastActiveAppBeforePopover: NSRunningApplication?
+    private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
 
     private let autoSendShortcutKeyDefaultsKey = "autoSendShortcutKey"
     private let autoSendShortcutKeyCodeDefaultsKey = "autoSendShortcutKeyCode"
@@ -109,8 +115,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         draftPanelController.onPaste = { [weak self] in
             self?.pasteMirroredDraft()
         }
-        draftPanelController.onClear = { [weak self] in
-            self?.clearMirroredDraft()
+        draftPanelController.onStartInput = { [weak self] in
+            self?.startInputSession()
         }
         draftPanelController.onOpenSettings = { [weak self] in
             self?.openSettingsMenuFromPanel()
@@ -132,7 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             text: mirroredDraftText,
             status: draftStatusMessage,
             canPaste: !mirroredDraftText.isEmpty && checkAccessibilityPermission(),
-            canClear: !mirroredDraftText.isEmpty
+            canStartInput: true
         )
     }
 
@@ -199,11 +205,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         refreshDraftPanel()
     }
 
+    private func statusMessageForStartInputReady() -> String {
+        if let sourceAddress = mirroredDraftSourceAddress, !sourceAddress.isEmpty {
+            return "Ready for input from \(sourceAddress)."
+        }
+        return "Ready. Waiting for Fifteen input."
+    }
+
+    private func statusMessageForPasteCleared() -> String {
+        "Pasted. Fifteen draft cleared."
+    }
+
+    private func remoteClearLocalFallbackStatus(for context: RemoteDraftClearContext) -> String {
+        switch context {
+        case .startInput:
+            return "Local draft cleared. Waiting for Fifteen input."
+        case .paste:
+            return "Pasted locally. No Fifteen callback target."
+        }
+    }
+
     private func pasteMirroredDraft() {
         guard !mirroredDraftText.isEmpty else { return }
 
         let textToPaste = mirroredDraftText
         popover.performClose(nil)
+        pendingRemoteDraftClearContext = .paste
 
         setMirroredDraft(
             text: "",
@@ -216,19 +243,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [autoSend] in
             PasteService.copyAndPaste(text: textToPaste, autoSend: autoSend)
         }
-        requestRemoteDraftClear(localAction: "Paste")
+        requestRemoteDraftClear(context: .paste)
     }
 
-    private func clearMirroredDraft() {
-        guard !mirroredDraftText.isEmpty else { return }
+    private func startInputSession() {
+        popover.performClose(nil)
+        pendingRemoteDraftClearContext = .startInput
 
         setMirroredDraft(
             text: "",
             sourceAddress: mirroredDraftSourceAddress,
             callbackPort: mirroredDraftCallbackPort,
-            status: "Cleared locally. Clearing Fifteen..."
+            status: "Starting input. Clearing Fifteen..."
         )
-        requestRemoteDraftClear(localAction: "Clear")
+        reactivateLastTargetAppIfNeeded()
+        requestRemoteDraftClear(context: .startInput)
     }
 
     private func reactivateLastTargetAppIfNeeded() {
@@ -237,11 +266,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         targetApp.activate(options: [.activateIgnoringOtherApps])
     }
 
-    private func requestRemoteDraftClear(localAction: String) {
+    private func requestRemoteDraftClear(context: RemoteDraftClearContext) {
         guard let host = mirroredDraftSourceAddress,
               !host.isEmpty,
               let callbackPort = mirroredDraftCallbackPort else {
-            draftStatusMessage = "\(localAction) finished locally. No Fifteen callback target."
+            pendingRemoteDraftClearContext = nil
+            draftStatusMessage = remoteClearLocalFallbackStatus(for: context)
             refreshDraftPanel()
             return
         }
@@ -253,7 +283,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         components.path = "/draft/clear"
 
         guard let url = components.url else {
-            draftStatusMessage = "\(localAction) finished locally. Fifteen callback URL is invalid."
+            pendingRemoteDraftClearContext = nil
+            draftStatusMessage = "Fifteen callback URL is invalid."
             refreshDraftPanel()
             return
         }
@@ -267,21 +298,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
 
                 if let error {
-                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear failed: \(error.localizedDescription)"
+                    guard self.pendingRemoteDraftClearContext == context else { return }
+                    self.pendingRemoteDraftClearContext = nil
+                    self.draftStatusMessage = "Fifteen clear failed: \(error.localizedDescription)"
                     self.refreshDraftPanel()
                     return
                 }
 
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear returned no response."
+                    guard self.pendingRemoteDraftClearContext == context else { return }
+                    self.pendingRemoteDraftClearContext = nil
+                    self.draftStatusMessage = "Fifteen clear returned no response."
                     self.refreshDraftPanel()
                     return
                 }
 
+                guard self.pendingRemoteDraftClearContext == context else { return }
+                self.pendingRemoteDraftClearContext = nil
+
                 if (200...299).contains(httpResponse.statusCode) {
-                    self.draftStatusMessage = "Fifteen draft cleared."
+                    self.draftStatusMessage = context == .startInput
+                        ? self.statusMessageForStartInputReady()
+                        : self.statusMessageForPasteCleared()
                 } else {
-                    self.draftStatusMessage = "\(localAction) finished locally. Fifteen clear failed with status \(httpResponse.statusCode)."
+                    self.draftStatusMessage = "Fifteen clear failed with status \(httpResponse.statusCode)."
                 }
                 self.refreshDraftPanel()
             }
@@ -727,10 +767,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 let status: String
                 if update.text.isEmpty {
-                    status = update.remoteAddress.isEmpty ? "Draft cleared from Fifteen." : "Draft cleared from \(update.remoteAddress)."
+                    switch self.pendingRemoteDraftClearContext {
+                    case .startInput:
+                        status = self.statusMessageForStartInputReady()
+                    case .paste:
+                        status = self.statusMessageForPasteCleared()
+                    case nil:
+                        status = update.remoteAddress.isEmpty ? "Draft cleared from Fifteen." : "Draft cleared from \(update.remoteAddress)."
+                    }
                 } else {
-                    status = update.remoteAddress.isEmpty ? "Draft synced from Fifteen." : "Draft synced from \(update.remoteAddress)."
+                    status = update.remoteAddress.isEmpty ? "Reading Fifteen input." : "Reading input from \(update.remoteAddress)."
                 }
+                self.pendingRemoteDraftClearContext = nil
 
                 self.setMirroredDraft(
                     text: update.text,
@@ -764,15 +812,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 private final class DraftPanelViewController: NSViewController {
     var onPaste: (() -> Void)?
-    var onClear: (() -> Void)?
+    var onStartInput: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
-    private let titleLabel = NSTextField(labelWithString: "Fifteen Draft")
-    private let statusLabel = NSTextField(labelWithString: "Waiting for Fifteen sync.")
+    private let titleLabel = NSTextField(labelWithString: "Fifteen Input")
+    private let statusLabel = NSTextField(labelWithString: "Click Start Input to sync from Fifteen.")
     private let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 336, height: 190))
     private let scrollView = NSScrollView()
+    private let startInputButton = NSButton(title: "Start Input", target: nil, action: nil)
     private let pasteButton = NSButton(title: "Paste", target: nil, action: nil)
-    private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
     private let settingsButton = NSButton(title: "Settings", target: nil, action: nil)
 
     override func loadView() {
@@ -803,19 +851,19 @@ private final class DraftPanelViewController: NSViewController {
         scrollView.autohidesScrollers = true
         scrollView.documentView = textView
 
+        startInputButton.bezelStyle = .rounded
+        startInputButton.target = self
+        startInputButton.action = #selector(handleStartInput)
+
         pasteButton.bezelStyle = .rounded
         pasteButton.target = self
         pasteButton.action = #selector(handlePaste)
-
-        clearButton.bezelStyle = .rounded
-        clearButton.target = self
-        clearButton.action = #selector(handleClear)
 
         settingsButton.bezelStyle = .rounded
         settingsButton.target = self
         settingsButton.action = #selector(handleOpenSettings)
 
-        let buttonRow = NSStackView(views: [pasteButton, clearButton, NSView(), settingsButton])
+        let buttonRow = NSStackView(views: [startInputButton, pasteButton, NSView(), settingsButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
         buttonRow.spacing = 8
@@ -846,21 +894,21 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func update(text: String, status: String, canPaste: Bool, canClear: Bool) {
+    func update(text: String, status: String, canPaste: Bool, canStartInput: Bool) {
         if textView.string != text {
             textView.string = text
         }
         statusLabel.stringValue = status
+        startInputButton.isEnabled = canStartInput
         pasteButton.isEnabled = canPaste
-        clearButton.isEnabled = canClear
+    }
+
+    @objc private func handleStartInput() {
+        onStartInput?()
     }
 
     @objc private func handlePaste() {
         onPaste?()
-    }
-
-    @objc private func handleClear() {
-        onClear?()
     }
 
     @objc private func handleOpenSettings() {
