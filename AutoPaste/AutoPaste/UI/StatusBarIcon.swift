@@ -1,7 +1,7 @@
 import Cocoa
 
 enum StatusBarIcon {
-    static func make(autoSend: Bool, running: Bool, inputModeActive: Bool) -> NSImage {
+    static func make(autoSend: Bool, running: Bool) -> NSImage {
         let s: CGFloat = 18
         let img = NSImage(size: NSSize(width: s, height: s))
         img.lockFocus()
@@ -40,13 +40,6 @@ enum StatusBarIcon {
             line.line(to: NSPoint(x: lineX2, y: yOff))
             line.lineWidth = 1.0
             line.stroke()
-        }
-
-        if inputModeActive {
-            let indicatorRect = NSRect(x: 1.5, y: 12.5, width: 4.5, height: 4.5)
-            let indicator = NSBezierPath(ovalIn: indicatorRect)
-            color.set()
-            indicator.fill()
         }
 
         if autoSend {

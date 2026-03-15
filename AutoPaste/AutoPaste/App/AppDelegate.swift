@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenu: NSMenu!
     private var popover: NSPopover!
     private var draftPanelController: DraftPanelViewController!
+    private var inputModeIndicatorView: NSView?
 
     private var titleItem: NSMenuItem!
     private var ipItem: NSMenuItem!
@@ -65,6 +66,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.target = self
         button.action = #selector(handleStatusItemClick(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        let indicator = NSView(frame: .zero)
+        indicator.wantsLayer = true
+        indicator.layer?.backgroundColor = NSColor.systemGreen.cgColor
+        indicator.layer?.cornerRadius = 3
+        indicator.isHidden = true
+        button.addSubview(indicator)
+        inputModeIndicatorView = indicator
+        updateInputModeIndicatorLayout()
     }
 
     private func buildMenu() {
@@ -131,11 +141,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateIcon() {
-        statusItem.button?.image = StatusBarIcon.make(
-            autoSend: autoSend,
-            running: serverRunning,
-            inputModeActive: isInputModeActive
+        statusItem.button?.image = StatusBarIcon.make(autoSend: autoSend, running: serverRunning)
+        updateInputModeIndicatorLayout()
+        inputModeIndicatorView?.isHidden = !isInputModeActive
+    }
+
+    private func updateInputModeIndicatorLayout() {
+        guard let button = statusItem.button,
+              let indicator = inputModeIndicatorView else { return }
+
+        let size: CGFloat = 6
+        let imageSize = button.image?.size ?? NSSize(width: 18, height: 18)
+        let imageOrigin = NSPoint(
+            x: (button.bounds.width - imageSize.width) / 2,
+            y: (button.bounds.height - imageSize.height) / 2
         )
+        let imageRect = NSRect(origin: imageOrigin, size: imageSize)
+        let x = imageRect.maxX - size * 0.55
+        let y: CGFloat
+
+        if button.isFlipped {
+            y = imageRect.minY + size * 0.15
+        } else {
+            y = imageRect.maxY - size * 1.15
+        }
+
+        indicator.frame = NSRect(
+            x: x,
+            y: y,
+            width: size,
+            height: size
+        )
+        indicator.layer?.cornerRadius = size / 2
     }
 
     private func refreshDraftPanel() {
