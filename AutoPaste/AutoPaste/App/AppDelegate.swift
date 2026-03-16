@@ -138,6 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var ipItem: NSMenuItem!
     private var portItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
+    private var historyItem: NSMenuItem!
     private var autoSendShortcutItem: NSMenuItem!
     private var inputShortcutItem: NSMenuItem!
     private var pasteShortcutItem: NSMenuItem!
@@ -157,6 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var draftStatusMessage = "点击\u{201C}开始输入\u{201D}，从手机同步文字到这里。"
     private let historyStore = DraftHistoryStore()
     private var historyEntries: [DraftHistoryEntry] = []
+    private var historyWindowController: DraftHistoryWindowController?
     private var lastActiveAppBeforePopover: NSRunningApplication?
     private var pendingRemoteDraftClearContext: RemoteDraftClearContext?
     private var isInputModeActive = false
@@ -214,6 +216,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         toggleItem.state = autoSend ? .on : .off
         menu.addItem(toggleItem)
+
+        historyItem = NSMenuItem(title: "查看历史记录", action: #selector(showHistoryWindow(_:)), keyEquivalent: "")
+        historyItem.target = self
+        menu.addItem(historyItem)
 
         let shortcutSubmenu = NSMenu()
 
@@ -277,7 +283,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 360)
+        popover.contentSize = NSSize(width: 360, height: 310)
         popover.contentViewController = draftPanelController
     }
 
@@ -302,7 +308,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             startInputButtonTitle: isInputModeActive ? "停止输入" : "开始输入",
             primaryActionTitle: hasMirroredDraft ? "粘贴" : "发送",
             canTriggerPrimaryAction: checkAccessibilityPermission(),
-            canStartInput: true,
+            canStartInput: true
+        )
+
+        historyWindowController?.update(
             historyText: formattedHistoryText(),
             hasHistory: !historyEntries.isEmpty
         )
@@ -709,6 +718,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAboutPanel(_ sender: NSMenuItem) {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @objc private func showHistoryWindow(_ sender: Any?) {
+        if historyWindowController == nil {
+            historyWindowController = DraftHistoryWindowController()
+        }
+
+        historyWindowController?.update(
+            historyText: formattedHistoryText(),
+            hasHistory: !historyEntries.isEmpty
+        )
+        historyWindowController?.showWindow(nil)
+        historyWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Port
@@ -1256,11 +1279,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Draft Panel View Controller
 
 private final class DraftPanelViewController: NSViewController {
-    private enum PanelMode: Int {
-        case draft = 0
-        case history = 1
-    }
-
     var onPrimaryAction: (() -> Void)?
     var onStartInput: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -1268,21 +1286,15 @@ private final class DraftPanelViewController: NSViewController {
 
     private let titleLabel = NSTextField(labelWithString: "输入同步")
     private let statusLabel = NSTextField(labelWithString: "")
-    private let modeControl = NSSegmentedControl(labels: ["当前", "历史"], trackingMode: .selectOne, target: nil, action: nil)
-    private let contentContainer = NSView()
-    private let draftTextView = NSTextView(frame: .zero)
-    private let draftScrollView = NSScrollView()
-    private let draftPlaceholderLabel = NSTextField(labelWithString: "等待手机端输入…")
-    private let historyTextView = NSTextView(frame: .zero)
-    private let historyScrollView = NSScrollView()
-    private let historyPlaceholderLabel = NSTextField(labelWithString: "还没有历史记录")
+    private let textView = NSTextView(frame: .zero)
+    private let scrollView = NSScrollView()
+    private let placeholderLabel = NSTextField(labelWithString: "等待手机端输入…")
     private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
     private let pasteButton = NSButton(title: "粘贴", target: nil, action: nil)
     private let settingsButton = NSButton(frame: .zero)
-    private var panelMode: PanelMode = .draft
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 360))
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 310))
 
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.setAccessibilityLabel("标题")
@@ -1293,23 +1305,34 @@ private final class DraftPanelViewController: NSViewController {
         statusLabel.maximumNumberOfLines = 2
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        modeControl.segmentStyle = .rounded
-        modeControl.selectedSegment = panelMode.rawValue
-        modeControl.target = self
-        modeControl.action = #selector(handleModeChange)
+        placeholderLabel.font = .systemFont(ofSize: 13)
+        placeholderLabel.textColor = .tertiaryLabelColor
+        placeholderLabel.isHidden = false
 
-        configureTextView(draftTextView, accessibilityLabel: "草稿内容")
-        configureTextView(historyTextView, accessibilityLabel: "历史记录")
-        configureScrollView(draftScrollView, documentView: draftTextView)
-        configureScrollView(historyScrollView, documentView: historyTextView)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textColor = .labelColor
+        textView.font = .systemFont(ofSize: 13)
+        textView.textContainerInset = NSSize(width: 10, height: 10)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.setAccessibilityLabel("草稿内容")
 
-        draftPlaceholderLabel.font = .systemFont(ofSize: 13)
-        draftPlaceholderLabel.textColor = .tertiaryLabelColor
-        draftPlaceholderLabel.isHidden = false
-
-        historyPlaceholderLabel.font = .systemFont(ofSize: 13)
-        historyPlaceholderLabel.textColor = .tertiaryLabelColor
-        historyPlaceholderLabel.isHidden = true
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
+        scrollView.wantsLayer = true
+        scrollView.layer?.cornerRadius = 8
+        scrollView.layer?.borderWidth = 1
+        scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
 
         startInputButton.bezelStyle = .rounded
         startInputButton.target = self
@@ -1329,59 +1352,41 @@ private final class DraftPanelViewController: NSViewController {
         settingsButton.action = #selector(handleOpenSettings)
         settingsButton.setAccessibilityLabel("打开设置")
 
-        contentContainer.translatesAutoresizingMaskIntoConstraints = false
-        for subview in [draftScrollView, historyScrollView, draftPlaceholderLabel, historyPlaceholderLabel] {
-            subview.translatesAutoresizingMaskIntoConstraints = false
-            contentContainer.addSubview(subview)
-        }
-
         let buttonRow = NSStackView(views: [startInputButton, pasteButton, NSView(), settingsButton])
         buttonRow.orientation = .horizontal
         buttonRow.alignment = .centerY
         buttonRow.spacing = 8
 
-        let stack = NSStackView(views: [titleLabel, statusLabel, modeControl, contentContainer, buttonRow])
+        let stack = NSStackView(views: [titleLabel, statusLabel, scrollView, buttonRow])
         stack.orientation = .vertical
         stack.spacing = 10
-        stack.setCustomSpacing(14, after: contentContainer)
+        stack.setCustomSpacing(14, after: scrollView)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(stack)
+        view.addSubview(placeholderLabel)
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
-            contentContainer.heightAnchor.constraint(equalToConstant: 210),
-
-            draftScrollView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-            draftScrollView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
-            draftScrollView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            draftScrollView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
-
-            historyScrollView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
-            historyScrollView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
-            historyScrollView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
-            historyScrollView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
-
-            draftPlaceholderLabel.leadingAnchor.constraint(equalTo: draftScrollView.leadingAnchor, constant: 14),
-            draftPlaceholderLabel.topAnchor.constraint(equalTo: draftScrollView.topAnchor, constant: 12),
-            draftPlaceholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: draftScrollView.trailingAnchor, constant: -14),
-
-            historyPlaceholderLabel.leadingAnchor.constraint(equalTo: historyScrollView.leadingAnchor, constant: 14),
-            historyPlaceholderLabel.topAnchor.constraint(equalTo: historyScrollView.topAnchor, constant: 12),
-            historyPlaceholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: historyScrollView.trailingAnchor, constant: -14)
+            scrollView.heightAnchor.constraint(equalToConstant: 180),
+            placeholderLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 14),
+            placeholderLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 12),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -14)
         ])
-
-        updateVisiblePanel()
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
 
-        layoutTextView(draftTextView, in: draftScrollView)
-        layoutTextView(historyTextView, in: historyScrollView)
+        let size = scrollView.contentSize
+        textView.frame = NSRect(origin: .zero, size: size)
+        textView.minSize = NSSize(width: size.width, height: size.height)
+        textView.maxSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -1394,24 +1399,17 @@ private final class DraftPanelViewController: NSViewController {
         startInputButtonTitle: String,
         primaryActionTitle: String,
         canTriggerPrimaryAction: Bool,
-        canStartInput: Bool,
-        historyText: String,
-        hasHistory: Bool
+        canStartInput: Bool
     ) {
-        if draftTextView.string != text {
-            draftTextView.string = text
-        }
-        if historyTextView.string != historyText {
-            historyTextView.string = historyText
+        if textView.string != text {
+            textView.string = text
         }
         statusLabel.stringValue = status
         startInputButton.title = startInputButtonTitle
         startInputButton.isEnabled = canStartInput
         pasteButton.title = primaryActionTitle
         pasteButton.isEnabled = canTriggerPrimaryAction
-        draftPlaceholderLabel.isHidden = !text.isEmpty || panelMode != .draft
-        historyPlaceholderLabel.isHidden = hasHistory || panelMode != .history
-        updateVisiblePanel()
+        placeholderLabel.isHidden = !text.isEmpty
     }
 
     @objc private func handleStartInput() {
@@ -1425,13 +1423,54 @@ private final class DraftPanelViewController: NSViewController {
     @objc private func handleOpenSettings() {
         onOpenSettings?()
     }
+}
 
-    @objc private func handleModeChange() {
-        panelMode = PanelMode(rawValue: modeControl.selectedSegment) ?? .draft
-        updateVisiblePanel()
+private final class DraftHistoryWindowController: NSWindowController {
+    private let historyViewController = DraftHistoryViewController()
+
+    init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 420),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "历史记录"
+        window.contentViewController = historyViewController
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
     }
 
-    private func configureTextView(_ textView: NSTextView, accessibilityLabel: String) {
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(historyText: String, hasHistory: Bool) {
+        historyViewController.update(historyText: historyText, hasHistory: hasHistory)
+    }
+}
+
+private final class DraftHistoryViewController: NSViewController {
+    private let titleLabel = NSTextField(labelWithString: "历史记录")
+    private let hintLabel = NSTextField(labelWithString: "这里会保留被清空或已粘贴过的内容，方便你回溯查看。")
+    private let textView = NSTextView(frame: .zero)
+    private let scrollView = NSScrollView()
+    private let placeholderLabel = NSTextField(labelWithString: "还没有历史记录")
+
+    override func loadView() {
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))
+
+        titleLabel.font = .preferredFont(forTextStyle: .title3)
+        hintLabel.font = .systemFont(ofSize: 12)
+        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.lineBreakMode = .byWordWrapping
+        hintLabel.maximumNumberOfLines = 2
+
+        placeholderLabel.font = .systemFont(ofSize: 13)
+        placeholderLabel.textColor = .tertiaryLabelColor
+
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -1443,24 +1482,44 @@ private final class DraftPanelViewController: NSViewController {
         textView.autoresizingMask = [.width]
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
-        textView.setAccessibilityLabel(accessibilityLabel)
-    }
 
-    private func configureScrollView(_ scrollView: NSScrollView, documentView: NSView) {
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
-        scrollView.documentView = documentView
+        scrollView.documentView = textView
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
         scrollView.wantsLayer = true
         scrollView.layer?.cornerRadius = 8
         scrollView.layer?.borderWidth = 1
         scrollView.layer?.borderColor = NSColor.separatorColor.cgColor
+
+        let stack = NSStackView(views: [titleLabel, hintLabel, scrollView])
+        stack.orientation = .vertical
+        stack.spacing = 10
+        stack.setCustomSpacing(14, after: hintLabel)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+        view.addSubview(placeholderLabel)
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 260),
+            placeholderLabel.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: 14),
+            placeholderLabel.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: 12),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -14)
+        ])
     }
 
-    private func layoutTextView(_ textView: NSTextView, in scrollView: NSScrollView) {
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
         let size = scrollView.contentSize
         textView.frame = NSRect(origin: .zero, size: size)
         textView.minSize = NSSize(width: size.width, height: size.height)
@@ -1468,12 +1527,11 @@ private final class DraftPanelViewController: NSViewController {
         textView.textContainer?.containerSize = NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    private func updateVisiblePanel() {
-        let showingDraft = panelMode == .draft
-        draftScrollView.isHidden = !showingDraft
-        historyScrollView.isHidden = showingDraft
-        draftPlaceholderLabel.isHidden = !showingDraft || !draftTextView.string.isEmpty
-        historyPlaceholderLabel.isHidden = showingDraft || !historyTextView.string.isEmpty
+    func update(historyText: String, hasHistory: Bool) {
+        if textView.string != historyText {
+            textView.string = historyText
+        }
+        placeholderLabel.isHidden = hasHistory
     }
 }
 
