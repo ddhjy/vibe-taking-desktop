@@ -156,7 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mirroredDraftText = ""
     private var mirroredDraftSourceAddress: String?
     private var mirroredDraftCallbackPort: UInt16?
-    private var draftStatusMessage = "点击\u{201C}开始输入\u{201D}，从手机同步文字到这里。"
+    private var draftStatusMessage = "点击\u{201C}开始输入\u{201D}接收手机文字"
     private let historyStore = DraftHistoryStore()
     private var historyEntries: [DraftHistoryEntry] = []
     private var historyWindowController: DraftHistoryWindowController?
@@ -465,21 +465,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func statusMessageForStartInputReady() -> String {
         if let sourceAddress = mirroredDraftSourceAddress, !sourceAddress.isEmpty {
-            return "已连接 \(sourceAddress)，等待输入中…"
+            return "已连接 \(sourceAddress)，等待输入…"
         }
-        return "等待输入中…"
+        return "等待输入…"
     }
 
     private func statusMessageForPasteCleared() -> String {
-        "已粘贴，同步完成"
+        "已粘贴并同步"
     }
 
     private func remoteClearLocalFallbackStatus(for context: RemoteDraftClearContext) -> String {
         switch context {
         case .startInput:
-            return "草稿已清除，等待输入中…"
+            return "已就绪，等待输入…"
         case .paste:
-            return "已粘贴（离线模式，未同步到手机）"
+            return "已粘贴（未能同步到手机）"
         }
     }
 
@@ -548,7 +548,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         shouldReopenPopoverAfterClose = false
         pendingRemoteDraftClearContext = .startInput
         mirroredDraftText = ""
-        draftStatusMessage = "输入已停止"
+        draftStatusMessage = "已停止接收"
         updateIcon()
         refreshDraftPanel()
         popover.performClose(nil)
@@ -648,7 +648,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let url = components.url else {
             pendingRemoteDraftClearContext = nil
-            draftStatusMessage = "无法连接手机端，请检查网络连接。"
+            draftStatusMessage = "无法连接手机，请确认两台设备在同一网络"
             refreshDraftPanel()
             return
         }
@@ -672,7 +672,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let httpResponse = response as? HTTPURLResponse else {
                     guard self.pendingRemoteDraftClearContext == context else { return }
                     self.pendingRemoteDraftClearContext = nil
-                    self.draftStatusMessage = "同步失败：手机端无响应。"
+                    self.draftStatusMessage = "同步失败：手机端未响应，请确认 App 在前台运行"
                     self.refreshDraftPanel()
                     return
                 }
@@ -685,7 +685,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         ? self.statusMessageForStartInputReady()
                         : self.statusMessageForPasteCleared()
                 } else {
-                    self.draftStatusMessage = "同步失败：手机端返回错误，请重试。"
+                    self.draftStatusMessage = "同步失败：手机端返回异常，请重试"
                 }
                 self.refreshDraftPanel()
             }
@@ -802,7 +802,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func changePort(_ sender: NSMenuItem) {
         let alert = NSAlert()
         alert.messageText = "修改监听端口"
-        alert.informativeText = "输入新端口号（1–65535）："
+        alert.informativeText = "请输入新的端口号（1–65535）"
         alert.addButton(withTitle: "更改")
         alert.addButton(withTitle: "取消")
 
@@ -870,12 +870,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = action.configurationTitle
-        alert.informativeText = "在下方框内按下组合键录制快捷键。按 Delete 清除。"
+        alert.informativeText = "按下组合键即可录入，Delete 清除"
         alert.addButton(withTitle: "设定")
         alert.addButton(withTitle: "取消")
 
         let inputField = ShortcutCaptureField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        inputField.placeholderString = "按下快捷键…"
+        inputField.placeholderString = "按下组合键…"
         inputField.isEditable = false
         inputField.isSelectable = false
         inputField.focusRingType = .exterior
@@ -1146,7 +1146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showGlobalShortcutUnavailableError(for action: GlobalShortcutAction? = nil) {
         let alert = NSAlert()
         alert.messageText = "快捷键冲突"
-        alert.informativeText = "这个快捷键已被系统或其他应用占用，请换一个组合键。"
+        alert.informativeText = "该快捷键已被占用，请选择其他组合"
         alert.addButton(withTitle: "重新设置")
         alert.addButton(withTitle: "取消")
         let response = alert.runModal()
@@ -1321,10 +1321,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     case .paste:
                         status = self.statusMessageForPasteCleared()
                     case nil:
-                        status = "草稿已清除"
+                        status = "手机端草稿已清空"
                     }
                 } else {
-                    status = "正在接收输入…"
+                    status = "正在同步…"
                 }
                 self.pendingRemoteDraftClearContext = nil
 
@@ -1366,11 +1366,11 @@ private final class DraftPanelViewController: NSViewController {
     var onOpenSettings: (() -> Void)?
     var onDismiss: (() -> Void)?
 
-    private let titleLabel = NSTextField(labelWithString: "输入同步")
+    private let titleLabel = NSTextField(labelWithString: "草稿")
     private let statusLabel = NSTextField(labelWithString: "")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "等待手机端输入…")
+    private let placeholderLabel = NSTextField(labelWithString: "手机上的文字会出现在这里")
     private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
     private let pasteButton = NSButton(title: "粘贴", target: nil, action: nil)
     private let settingsButton = NSButton(frame: .zero)
@@ -1379,7 +1379,7 @@ private final class DraftPanelViewController: NSViewController {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 310))
 
         titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.setAccessibilityLabel("标题")
+        titleLabel.setAccessibilityLabel("草稿面板")
 
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
@@ -1515,13 +1515,15 @@ private final class SettingsWindowController: NSWindowController {
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 580),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "设置"
         window.contentViewController = settingsViewController
         window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 520, height: 580))
+        window.contentMinSize = NSSize(width: 520, height: 520)
         window.center()
         super.init(window: window)
     }
@@ -1572,15 +1574,8 @@ private final class SettingsViewController: NSViewController {
     private let accessibilityValueLabel = SettingsViewController.makeDetailLabel()
 
     override func loadView() {
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-
-        let documentView = NSView()
-        documentView.translatesAutoresizingMaskIntoConstraints = false
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 580))
+        preferredContentSize = NSSize(width: 520, height: 580)
 
         let aboutButton = Self.makeActionButton(title: "关于")
         aboutButton.target = self
@@ -1589,7 +1584,7 @@ private final class SettingsViewController: NSViewController {
         let titleLabel = NSTextField(labelWithString: "设置")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
 
-        let subtitleLabel = NSTextField(labelWithString: "把网络、快捷键和权限集中放在一个独立窗口里。")
+        let subtitleLabel = NSTextField(labelWithString: "管理连接、快捷键与系统权限")
         subtitleLabel.font = .systemFont(ofSize: 12)
         subtitleLabel.textColor = .secondaryLabelColor
 
@@ -1625,19 +1620,19 @@ private final class SettingsViewController: NSViewController {
         historyButton.action = #selector(handleShowHistory)
 
         let behaviorCard = Self.makeCard(rows: [
-            makeRow(title: "自动发送", detail: Self.makeHintLabel("开启后会沿用当前的自动发送逻辑。"), accessory: autoSendSwitch),
-            makeRow(title: "历史记录", detail: Self.makeHintLabel("查看被清空或已经粘贴过的内容。"), accessory: historyButton)
+            makeRow(title: "自动发送", detail: Self.makeHintLabel("粘贴后自动按下回车发送"), accessory: autoSendSwitch),
+            makeRow(title: "历史记录", detail: Self.makeHintLabel("回顾已粘贴或被替换的草稿"), accessory: historyButton)
         ])
 
-        let autoSendShortcutButton = Self.makeActionButton(title: "配置…")
+        let autoSendShortcutButton = Self.makeActionButton(title: "设置…")
         autoSendShortcutButton.target = self
         autoSendShortcutButton.action = #selector(handleConfigureAutoSendShortcut)
 
-        let inputShortcutButton = Self.makeActionButton(title: "配置…")
+        let inputShortcutButton = Self.makeActionButton(title: "设置…")
         inputShortcutButton.target = self
         inputShortcutButton.action = #selector(handleConfigureInputShortcut)
 
-        let pasteShortcutButton = Self.makeActionButton(title: "配置…")
+        let pasteShortcutButton = Self.makeActionButton(title: "设置…")
         pasteShortcutButton.target = self
         pasteShortcutButton.action = #selector(handleConfigurePasteShortcut)
 
@@ -1693,25 +1688,14 @@ private final class SettingsViewController: NSViewController {
             headerRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor)
         ])
 
-        documentView.addSubview(mainStack)
+        view.addSubview(mainStack)
 
         NSLayoutConstraint.activate([
-            mainStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 28),
-            mainStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -28),
-            mainStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 24),
-            mainStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -24)
+            mainStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
+            mainStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
+            mainStack.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
+            mainStack.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -24)
         ])
-
-        scrollView.documentView = documentView
-
-        NSLayoutConstraint.activate([
-            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
-        ])
-
-        view = scrollView
     }
 
     func update(
@@ -1871,10 +1855,10 @@ private final class DraftHistoryWindowController: NSWindowController {
 
 private final class DraftHistoryViewController: NSViewController {
     private let titleLabel = NSTextField(labelWithString: "历史记录")
-    private let hintLabel = NSTextField(labelWithString: "这里会保留被清空或已粘贴过的内容，方便你回溯查看。")
+    private let hintLabel = NSTextField(labelWithString: "保留已粘贴或被替换的草稿，方便回溯。")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "还没有历史记录")
+    private let placeholderLabel = NSTextField(labelWithString: "暂无记录")
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 420))
