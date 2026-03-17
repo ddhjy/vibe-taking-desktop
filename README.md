@@ -92,6 +92,7 @@ curl -X POST http://localhost:7788 \
 
 | 菜单项 | 说明 |
 |--------|------|
+| **设置…** | 打开独立设置窗口，集中管理端口、自动发送、快捷键和权限 |
 | **Port: 7788** | 点击可修改监听端口 |
 | **Auto Send** | 开启后单次触发会发送 Enter；短时间内连续触发两次时，会取消这次 Enter，改为只发送一次 Cmd+Enter |
 | **Auto Send Shortcut: None** | 配置 Auto Send 全局切换快捷键（默认无快捷键，点击后直接按组合键录制，按 Delete 清除） |

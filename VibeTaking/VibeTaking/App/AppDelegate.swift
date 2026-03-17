@@ -133,6 +133,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenu: NSMenu!
     private var popover: NSPopover!
     private var draftPanelController: DraftPanelViewController!
+    private var settingsWindowController: SettingsWindowController?
 
     private var titleItem: NSMenuItem!
     private var ipItem: NSMenuItem!
@@ -179,6 +180,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startServer()
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        refreshIPItem()
+        updateAccessibilityStatus()
+        refreshSettingsWindow()
+    }
+
     private func configureStatusButton() {
         guard let button = statusItem.button else { return }
         button.target = self
@@ -200,6 +207,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let aboutItem = NSMenuItem(title: "关于随心记", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
+
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(showSettingsWindow(_:)), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
 
         ipItem = NSMenuItem(title: ipMenuTitle(), action: #selector(copyIPSummary(_:)), keyEquivalent: "")
@@ -268,7 +279,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.toggleInputSession()
         }
         draftPanelController.onOpenSettings = { [weak self] in
-            self?.openSettingsMenuFromPanel()
+            self?.openSettingsWindowFromPanel()
         }
         draftPanelController.onDismiss = { [weak self] in
             guard let self else { return }
@@ -377,10 +388,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = nil
     }
 
-    private func openSettingsMenuFromPanel() {
+    private func openSettingsWindowFromPanel() {
         popover.performClose(nil)
         DispatchQueue.main.async { [weak self] in
-            self?.showStatusMenu()
+            self?.showSettingsWindow(nil)
         }
     }
 
@@ -699,6 +710,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "未授权")
         }
         refreshDraftPanel()
+        refreshSettingsWindow()
     }
 
     @objc private func openAccessibilitySettings(_ sender: NSMenuItem) {
@@ -718,6 +730,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAboutPanel(_ sender: NSMenuItem) {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @objc private func showSettingsWindow(_ sender: Any?) {
+        if settingsWindowController == nil {
+            let viewController = SettingsViewController()
+            viewController.onShowAbout = { [weak self] in
+                self?.showAboutPanel(NSMenuItem())
+            }
+            viewController.onCopyNetworkInfo = { [weak self] in
+                self?.copyIPSummary(NSMenuItem())
+            }
+            viewController.onChangePort = { [weak self] in
+                self?.changePort(NSMenuItem())
+            }
+            viewController.onToggleAutoSend = { [weak self] isEnabled in
+                self?.setAutoSendState(isEnabled)
+            }
+            viewController.onShowHistory = { [weak self] in
+                self?.showHistoryWindow(nil)
+            }
+            viewController.onConfigureAutoSendShortcut = { [weak self] in
+                self?.configureShortcut(for: .autoSendToggle)
+            }
+            viewController.onConfigureInputShortcut = { [weak self] in
+                self?.configureShortcut(for: .inputToggle)
+            }
+            viewController.onConfigurePasteShortcut = { [weak self] in
+                self?.configureShortcut(for: .pasteDraft)
+            }
+            viewController.onOpenAccessibilitySettings = { [weak self] in
+                self?.openAccessibilitySettings(NSMenuItem())
+            }
+            settingsWindowController = SettingsWindowController(settingsViewController: viewController)
+        }
+
+        refreshSettingsWindow()
+        settingsWindowController?.showWindow(nil)
+        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func refreshSettingsWindow() {
+        settingsWindowController?.update(
+            ipSummary: ipSummaryLines().joined(separator: "\n"),
+            port: port,
+            autoSend: autoSend,
+            autoSendShortcut: shortcutSummary(for: .autoSendToggle),
+            inputShortcut: shortcutSummary(for: .inputToggle),
+            pasteShortcut: shortcutSummary(for: .pasteDraft),
+            accessibilityGranted: checkAccessibilityPermission()
+        )
     }
 
     @objc private func showHistoryWindow(_ sender: Any?) {
@@ -756,6 +819,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         port = newPort
         portItem.title = "端口：\(port)"
+        refreshSettingsWindow()
 
         if serverRunning {
             stopServer()
@@ -770,10 +834,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func toggleAutoSendState() {
-        autoSend.toggle()
+        setAutoSendState(!autoSend)
+    }
+
+    private func setAutoSendState(_ isEnabled: Bool) {
+        guard autoSend != isEnabled else {
+            refreshSettingsWindow()
+            return
+        }
+
+        autoSend = isEnabled
         toggleItem.state = autoSend ? .on : .off
         server?.autoSend = autoSend
         updateIcon()
+        refreshSettingsWindow()
     }
 
     // MARK: - Shortcut Configuration
@@ -858,6 +932,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             shortcutMenuItem(for: action)?.title = "\(action.menuTitlePrefix)：\(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))（冲突）"
             print("Failed to register global shortcut for \(action.menuTitlePrefix): \(shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers))")
         }
+        refreshSettingsWindow()
     }
 
     private func saveShortcut(_ shortcut: ShortcutConfig, for action: GlobalShortcutAction) {
@@ -880,6 +955,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.set(Int(shortcut.keyCode), forKey: shortcutDefaultsKey(for: action, suffix: "KeyCode"))
         defaults.set(Int(shortcut.modifiers.rawValue), forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
         applyShortcutToMenu(shortcut, for: action)
+        refreshSettingsWindow()
     }
 
     private func clearShortcut(for action: GlobalShortcutAction) {
@@ -889,6 +965,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         defaults.removeObject(forKey: shortcutDefaultsKey(for: action, suffix: "Modifiers"))
         unregisterGlobalHotKey(for: action)
         clearShortcutOnMenuOnly(for: action)
+        refreshSettingsWindow()
     }
 
     private func clearShortcutOnMenuOnly(for action: GlobalShortcutAction) {
@@ -1085,6 +1162,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if modifiers.contains(.shift) { symbols += "⇧" }
         if modifiers.contains(.command) { symbols += "⌘" }
         return symbols + key.uppercased()
+    }
+
+    private func shortcutSummary(for action: GlobalShortcutAction) -> String {
+        guard let shortcut = currentShortcut(for: action) else { return "未设置" }
+        return shortcutDisplay(key: shortcut.key, modifiers: shortcut.modifiers)
     }
 
     // MARK: - Network Info
@@ -1422,6 +1504,341 @@ private final class DraftPanelViewController: NSViewController {
 
     @objc private func handleOpenSettings() {
         onOpenSettings?()
+    }
+}
+
+private final class SettingsWindowController: NSWindowController {
+    private let settingsViewController: SettingsViewController
+
+    init(settingsViewController: SettingsViewController) {
+        self.settingsViewController = settingsViewController
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 580),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "设置"
+        window.contentViewController = settingsViewController
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(
+        ipSummary: String,
+        port: UInt16,
+        autoSend: Bool,
+        autoSendShortcut: String,
+        inputShortcut: String,
+        pasteShortcut: String,
+        accessibilityGranted: Bool
+    ) {
+        settingsViewController.update(
+            ipSummary: ipSummary,
+            port: port,
+            autoSend: autoSend,
+            autoSendShortcut: autoSendShortcut,
+            inputShortcut: inputShortcut,
+            pasteShortcut: pasteShortcut,
+            accessibilityGranted: accessibilityGranted
+        )
+    }
+}
+
+private final class SettingsViewController: NSViewController {
+    var onShowAbout: (() -> Void)?
+    var onCopyNetworkInfo: (() -> Void)?
+    var onChangePort: (() -> Void)?
+    var onToggleAutoSend: ((Bool) -> Void)?
+    var onShowHistory: (() -> Void)?
+    var onConfigureAutoSendShortcut: (() -> Void)?
+    var onConfigureInputShortcut: (() -> Void)?
+    var onConfigurePasteShortcut: (() -> Void)?
+    var onOpenAccessibilitySettings: (() -> Void)?
+
+    private let ipValueLabel = SettingsViewController.makeDetailLabel()
+    private let portValueLabel = SettingsViewController.makeDetailLabel()
+    private let autoSendSwitch = NSSwitch(frame: .zero)
+    private let autoSendShortcutValueLabel = SettingsViewController.makeDetailLabel()
+    private let inputShortcutValueLabel = SettingsViewController.makeDetailLabel()
+    private let pasteShortcutValueLabel = SettingsViewController.makeDetailLabel()
+    private let accessibilityValueLabel = SettingsViewController.makeDetailLabel()
+
+    override func loadView() {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+
+        let documentView = NSView()
+        documentView.translatesAutoresizingMaskIntoConstraints = false
+
+        let aboutButton = Self.makeActionButton(title: "关于")
+        aboutButton.target = self
+        aboutButton.action = #selector(handleShowAbout)
+
+        let titleLabel = NSTextField(labelWithString: "设置")
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+
+        let subtitleLabel = NSTextField(labelWithString: "把网络、快捷键和权限集中放在一个独立窗口里。")
+        subtitleLabel.font = .systemFont(ofSize: 12)
+        subtitleLabel.textColor = .secondaryLabelColor
+
+        let titleGroup = NSStackView(views: [titleLabel, subtitleLabel])
+        titleGroup.orientation = .vertical
+        titleGroup.alignment = .leading
+        titleGroup.spacing = 4
+
+        let headerRow = NSStackView(views: [titleGroup, NSView(), aboutButton])
+        headerRow.orientation = .horizontal
+        headerRow.alignment = .top
+        headerRow.spacing = 12
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let copyButton = Self.makeActionButton(title: "复制")
+        copyButton.target = self
+        copyButton.action = #selector(handleCopyNetworkInfo)
+
+        let changePortButton = Self.makeActionButton(title: "修改")
+        changePortButton.target = self
+        changePortButton.action = #selector(handleChangePort)
+
+        let networkCard = Self.makeCard(rows: [
+            makeRow(title: "局域网地址", detail: ipValueLabel, accessory: copyButton),
+            makeRow(title: "监听端口", detail: portValueLabel, accessory: changePortButton)
+        ])
+
+        autoSendSwitch.target = self
+        autoSendSwitch.action = #selector(handleAutoSendChanged)
+
+        let historyButton = Self.makeActionButton(title: "查看")
+        historyButton.target = self
+        historyButton.action = #selector(handleShowHistory)
+
+        let behaviorCard = Self.makeCard(rows: [
+            makeRow(title: "自动发送", detail: Self.makeHintLabel("开启后会沿用当前的自动发送逻辑。"), accessory: autoSendSwitch),
+            makeRow(title: "历史记录", detail: Self.makeHintLabel("查看被清空或已经粘贴过的内容。"), accessory: historyButton)
+        ])
+
+        let autoSendShortcutButton = Self.makeActionButton(title: "配置…")
+        autoSendShortcutButton.target = self
+        autoSendShortcutButton.action = #selector(handleConfigureAutoSendShortcut)
+
+        let inputShortcutButton = Self.makeActionButton(title: "配置…")
+        inputShortcutButton.target = self
+        inputShortcutButton.action = #selector(handleConfigureInputShortcut)
+
+        let pasteShortcutButton = Self.makeActionButton(title: "配置…")
+        pasteShortcutButton.target = self
+        pasteShortcutButton.action = #selector(handleConfigurePasteShortcut)
+
+        let shortcutsCard = Self.makeCard(rows: [
+            makeRow(title: "自动发送", detail: autoSendShortcutValueLabel, accessory: autoSendShortcutButton),
+            makeRow(title: "输入切换", detail: inputShortcutValueLabel, accessory: inputShortcutButton),
+            makeRow(title: "粘贴/发送", detail: pasteShortcutValueLabel, accessory: pasteShortcutButton)
+        ])
+
+        let accessibilityButton = Self.makeActionButton(title: "打开系统设置")
+        accessibilityButton.target = self
+        accessibilityButton.action = #selector(handleOpenAccessibilitySettings)
+
+        let permissionsCard = Self.makeCard(rows: [
+            makeRow(title: "辅助功能", detail: accessibilityValueLabel, accessory: accessibilityButton)
+        ])
+
+        let mainStack = NSStackView()
+        mainStack.orientation = .vertical
+        mainStack.alignment = .leading
+        mainStack.spacing = 20
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+
+        mainStack.addArrangedSubview(headerRow)
+
+        let sections: [(String, NSView)] = [
+            ("网络", networkCard),
+            ("行为", behaviorCard),
+            ("快捷键", shortcutsCard),
+            ("权限", permissionsCard)
+        ]
+
+        for (title, card) in sections {
+            let label = NSTextField(labelWithString: title)
+            label.font = .systemFont(ofSize: 13, weight: .semibold)
+            label.textColor = .secondaryLabelColor
+
+            let section = NSStackView(views: [label, card])
+            section.orientation = .vertical
+            section.alignment = .leading
+            section.spacing = 8
+            section.translatesAutoresizingMaskIntoConstraints = false
+
+            mainStack.addArrangedSubview(section)
+
+            NSLayoutConstraint.activate([
+                card.widthAnchor.constraint(equalTo: section.widthAnchor),
+                section.widthAnchor.constraint(equalTo: mainStack.widthAnchor)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            headerRow.widthAnchor.constraint(equalTo: mainStack.widthAnchor)
+        ])
+
+        documentView.addSubview(mainStack)
+
+        NSLayoutConstraint.activate([
+            mainStack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: 28),
+            mainStack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -28),
+            mainStack.topAnchor.constraint(equalTo: documentView.topAnchor, constant: 24),
+            mainStack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor, constant: -24)
+        ])
+
+        scrollView.documentView = documentView
+
+        NSLayoutConstraint.activate([
+            documentView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
+            documentView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
+            documentView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            documentView.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor)
+        ])
+
+        view = scrollView
+    }
+
+    func update(
+        ipSummary: String,
+        port: UInt16,
+        autoSend: Bool,
+        autoSendShortcut: String,
+        inputShortcut: String,
+        pasteShortcut: String,
+        accessibilityGranted: Bool
+    ) {
+        ipValueLabel.stringValue = ipSummary.isEmpty ? "未检测到局域网地址" : ipSummary
+        portValueLabel.stringValue = "\(port)"
+        autoSendSwitch.state = autoSend ? .on : .off
+        autoSendShortcutValueLabel.stringValue = autoSendShortcut
+        inputShortcutValueLabel.stringValue = inputShortcut
+        pasteShortcutValueLabel.stringValue = pasteShortcut
+
+        accessibilityValueLabel.stringValue = accessibilityGranted ? "已授权" : "未授权"
+        accessibilityValueLabel.textColor = accessibilityGranted ? .systemGreen : .systemOrange
+    }
+
+    @objc private func handleShowAbout() { onShowAbout?() }
+    @objc private func handleCopyNetworkInfo() { onCopyNetworkInfo?() }
+    @objc private func handleChangePort() { onChangePort?() }
+    @objc private func handleAutoSendChanged() { onToggleAutoSend?(autoSendSwitch.state == .on) }
+    @objc private func handleShowHistory() { onShowHistory?() }
+    @objc private func handleConfigureAutoSendShortcut() { onConfigureAutoSendShortcut?() }
+    @objc private func handleConfigureInputShortcut() { onConfigureInputShortcut?() }
+    @objc private func handleConfigurePasteShortcut() { onConfigurePasteShortcut?() }
+    @objc private func handleOpenAccessibilitySettings() { onOpenAccessibilitySettings?() }
+
+    // MARK: - Row & Card Builders
+
+    private func makeRow(title: String, detail: NSView, accessory: NSView) -> NSView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .medium)
+
+        let leftStack = NSStackView(views: [titleLabel, detail])
+        leftStack.orientation = .vertical
+        leftStack.alignment = .leading
+        leftStack.spacing = 2
+        leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let rowContent = NSStackView(views: [leftStack, NSView(), accessory])
+        rowContent.orientation = .horizontal
+        rowContent.alignment = .centerY
+        rowContent.spacing = 12
+        rowContent.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = NSView()
+        container.addSubview(rowContent)
+
+        NSLayoutConstraint.activate([
+            rowContent.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            rowContent.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            rowContent.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            rowContent.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+        ])
+
+        return container
+    }
+
+    private static func makeCard(rows: [NSView]) -> NSView {
+        let box = NSBox()
+        box.boxType = .custom
+        box.cornerRadius = 10
+        box.borderWidth = 0.5
+        box.borderColor = .separatorColor
+        box.fillColor = .controlBackgroundColor
+        box.contentViewMargins = .zero
+        box.titlePosition = .noTitle
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 0
+        stack.alignment = .leading
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        for (index, row) in rows.enumerated() {
+            if index > 0 {
+                let separator = NSBox()
+                separator.boxType = .separator
+                separator.translatesAutoresizingMaskIntoConstraints = false
+                stack.addArrangedSubview(separator)
+            }
+            row.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(row)
+        }
+
+        if let contentView = box.contentView {
+            contentView.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                stack.topAnchor.constraint(equalTo: contentView.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            ])
+        }
+
+        for subview in stack.arrangedSubviews {
+            subview.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        return box
+    }
+
+    private static func makeActionButton(title: String) -> NSButton {
+        let button = NSButton(title: title, target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .regular
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return button
+    }
+
+    private static func makeDetailLabel() -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        return label
+    }
+
+    private static func makeHintLabel(_ string: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: string)
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .tertiaryLabelColor
+        return label
     }
 }
 
