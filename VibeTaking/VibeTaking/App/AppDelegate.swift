@@ -1366,7 +1366,7 @@ private final class DraftPanelViewController: NSViewController {
     var onOpenSettings: (() -> Void)?
     var onDismiss: (() -> Void)?
 
-    private let titleLabel = NSTextField(labelWithString: "草稿")
+    private let titleLabel = NSTextField(labelWithString: "随心记")
     private let statusLabel = NSTextField(labelWithString: "")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
