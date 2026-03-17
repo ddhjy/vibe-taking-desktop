@@ -5,14 +5,14 @@
       "layers" : [
         {
           "blend-mode" : "normal",
-          "fill" : "automatic",
+          "fill" : "none",
           "glass" : true,
           "hidden" : false,
           "image-name" : "AppIcon.png",
           "name" : "AppIcon",
           "opacity" : 1,
           "position" : {
-            "scale" : 0.8,
+            "scale" : 1.15,
             "translation-in-points" : [
               0,
               0
