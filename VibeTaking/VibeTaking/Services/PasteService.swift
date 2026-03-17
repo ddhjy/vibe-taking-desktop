@@ -10,7 +10,7 @@ enum PasteService {
     }
 
     private static let commandSendThreshold: TimeInterval = 0.3
-    private static let sendStateQueue = DispatchQueue(label: "com.autopaste.send-state")
+    private static let sendStateQueue = DispatchQueue(label: "com.vibetaking.send-state")
     private static var pendingReturnWorkItem: DispatchWorkItem?
     private static var pendingReturnID: UUID?
 

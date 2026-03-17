@@ -9,7 +9,7 @@ final class HTTPServer {
 
     private var listenSocket: Int32 = -1
     private var running = false
-    private let queue = DispatchQueue(label: "com.autopaste.httpserver", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "com.vibetaking.httpserver", attributes: .concurrent)
     var autoSend = false
     var onPasteRequest: ((String, Bool) -> Void)?
     var onDraftUpdate: ((DraftUpdate) -> Void)?

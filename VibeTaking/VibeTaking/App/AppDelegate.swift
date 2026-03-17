@@ -46,7 +46,7 @@ private final class DraftHistoryStore {
         }
 
         fileURL = appSupportDirectory
-            .appendingPathComponent("AutoPaste", isDirectory: true)
+            .appendingPathComponent("VibeTaking", isDirectory: true)
             .appendingPathComponent("draft-history.json")
     }
 
@@ -192,12 +192,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        titleItem = NSMenuItem(title: "AutoPaste", action: nil, keyEquivalent: "")
+        titleItem = NSMenuItem(title: "随心记", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         menu.addItem(titleItem)
         menu.addItem(.separator())
 
-        let aboutItem = NSMenuItem(title: "关于 AutoPaste", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "关于随心记", action: #selector(showAboutPanel(_:)), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
         menu.addItem(.separator())
@@ -250,7 +250,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "退出 AutoPaste", action: #selector(quitApp(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出随心记", action: #selector(quitApp(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -1260,7 +1260,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             server = srv
             serverRunning = true
             updateIcon()
-            print("AutoPaste listening on http://0.0.0.0:\(port)")
+            print("VibeTaking listening on http://0.0.0.0:\(port)")
         } catch {
             print("Failed to start server: \(error)")
         }

@@ -1,10 +1,10 @@
 # 权限配置指南
 
-AutoPaste 需要 **辅助功能权限** 才能模拟键盘粘贴操作。
+随心记需要 **辅助功能权限** 才能模拟键盘粘贴操作。
 
 ## 权限状态检查
 
-打开 AutoPaste 菜单栏图标，会显示当前权限状态：
+打开随心记菜单栏图标，会显示当前权限状态：
 
 - ✅ `Accessibility: Granted` — 权限已授予，可正常使用
 - ❌ `Accessibility: Not Granted` — 权限未授予，需要配置
@@ -13,10 +13,10 @@ AutoPaste 需要 **辅助功能权限** 才能模拟键盘粘贴操作。
 
 1. 打开 **系统设置** → **隐私与安全性** → **辅助功能**
 2. 点击 **+** 按钮
-3. 导航到 `/Applications/AutoPaste.app` 并添加
-4. 确保 AutoPaste 旁边的开关**打开**
-5. **完全退出** AutoPaste（菜单栏点 Quit）
-6. 重新打开 AutoPaste
+3. 导航到 `/Applications/VibeTaking.app` 并添加
+4. 确保随心记旁边的开关**打开**
+5. **完全退出**随心记（菜单栏点 Quit）
+6. 重新打开随心记
 
 ## 重新编译后权限失效
 
@@ -25,10 +25,10 @@ AutoPaste 需要 **辅助功能权限** 才能模拟键盘粘贴操作。
 
 **解决方法：**
 
-1. 在辅助功能列表中**删除** AutoPaste（选中后点 `-`）
-2. 重新添加 `/Applications/AutoPaste.app`
+1. 在辅助功能列表中**删除**随心记（选中后点 `-`）
+2. 重新添加 `/Applications/VibeTaking.app`
 3. 确保开关打开
-4. 重启 AutoPaste
+4. 重启随心记
 
 ## 快速修复
 

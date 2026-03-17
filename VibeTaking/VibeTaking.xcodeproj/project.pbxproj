@@ -24,11 +24,11 @@
 		A20000010000000000000004 /* HTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPServer.swift; sourceTree = "<group>"; };
 		A20000010000000000000005 /* PasteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteService.swift; sourceTree = "<group>"; };
 		A20000010000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A20000010000000000000007 /* AutoPaste.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AutoPaste.entitlements; sourceTree = "<group>"; };
+		A20000010000000000000007 /* VibeTaking.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VibeTaking.entitlements; sourceTree = "<group>"; };
 		A20000010000000000000010 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		A20000010000000000000011 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		A20000010000000000000020 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
-		A20000010000000000000099 /* AutoPaste.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AutoPaste.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000010000000000000099 /* VibeTaking.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VibeTaking.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,13 +47,13 @@
 		A40000010000000000000001 /* = root = */ = {
 			isa = PBXGroup;
 			children = (
-				A40000010000000000000002 /* AutoPaste */,
+				A40000010000000000000002 /* VibeTaking */,
 				A40000010000000000000003 /* Frameworks */,
 				A40000010000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		A40000010000000000000002 /* AutoPaste */ = {
+		A40000010000000000000002 /* VibeTaking */ = {
 			isa = PBXGroup;
 			children = (
 				A40000010000000000000010 /* App */,
@@ -62,7 +62,7 @@
 				A40000010000000000000013 /* Services */,
 				A40000010000000000000014 /* Resources */,
 			);
-			path = AutoPaste;
+			path = VibeTaking;
 			sourceTree = "<group>";
 		};
 		A40000010000000000000010 /* App */ = {
@@ -102,7 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000010000000000000006 /* Info.plist */,
-				A20000010000000000000007 /* AutoPaste.entitlements */,
+				A20000010000000000000007 /* VibeTaking.entitlements */,
 				A20000010000000000000020 /* AppIcon.icon */,
 			);
 			path = Resources;
@@ -120,7 +120,7 @@
 		A40000010000000000000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A20000010000000000000099 /* AutoPaste.app */,
+				A20000010000000000000099 /* VibeTaking.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,9 +128,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A50000010000000000000001 /* AutoPaste */ = {
+		A50000010000000000000001 /* VibeTaking */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A70000010000000000000003 /* Build configuration list for PBXNativeTarget "AutoPaste" */;
+			buildConfigurationList = A70000010000000000000003 /* Build configuration list for PBXNativeTarget "VibeTaking" */;
 			buildPhases = (
 				A60000010000000000000001 /* Sources */,
 				A30000010000000000000001 /* Frameworks */,
@@ -140,9 +140,9 @@
 			);
 			dependencies = (
 			);
-			name = AutoPaste;
-			productName = AutoPaste;
-			productReference = A20000010000000000000099 /* AutoPaste.app */;
+			name = VibeTaking;
+			productName = VibeTaking;
+			productReference = A20000010000000000000099 /* VibeTaking.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -160,7 +160,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A70000010000000000000001 /* Build configuration list for PBXProject "AutoPaste" */;
+			buildConfigurationList = A70000010000000000000001 /* Build configuration list for PBXProject "VibeTaking" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -173,7 +173,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A50000010000000000000001 /* AutoPaste */,
+				A50000010000000000000001 /* VibeTaking */,
 			);
 		};
 /* End PBXProject section */
@@ -272,18 +272,18 @@
 			isa = XCBuildConfiguration;
 				buildSettings = {
 					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-					CODE_SIGN_ENTITLEMENTS = AutoPaste/Resources/AutoPaste.entitlements;
+					CODE_SIGN_ENTITLEMENTS = VibeTaking/Resources/VibeTaking.entitlements;
 					CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = AutoPaste/Resources/Info.plist;
+				INFOPLIST_FILE = VibeTaking/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.autopaste.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vibetaking.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -294,18 +294,18 @@
 			isa = XCBuildConfiguration;
 				buildSettings = {
 					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-					CODE_SIGN_ENTITLEMENTS = AutoPaste/Resources/AutoPaste.entitlements;
+					CODE_SIGN_ENTITLEMENTS = VibeTaking/Resources/VibeTaking.entitlements;
 					CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = AutoPaste/Resources/Info.plist;
+				INFOPLIST_FILE = VibeTaking/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.autopaste.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.vibetaking.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -315,7 +315,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A70000010000000000000001 /* Build configuration list for PBXProject "AutoPaste" */ = {
+		A70000010000000000000001 /* Build configuration list for PBXProject "VibeTaking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B10000010000000000000001 /* Debug */,
@@ -324,7 +324,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A70000010000000000000003 /* Build configuration list for PBXNativeTarget "AutoPaste" */ = {
+		A70000010000000000000003 /* Build configuration list for PBXNativeTarget "VibeTaking" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B10000010000000000000003 /* Debug */,

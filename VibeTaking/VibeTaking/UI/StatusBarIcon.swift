@@ -12,7 +12,7 @@ enum StatusBarIcon {
         }
 
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "AutoPaste")?
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "随心记")?
             .withSymbolConfiguration(config) else {
             return NSImage()
         }

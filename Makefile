@@ -1,10 +1,10 @@
-APP_NAME := AutoPaste
-PROJECT_DIR := AutoPaste
-PROJECT_FILE := $(PROJECT_DIR)/AutoPaste.xcodeproj
+APP_NAME := VibeTaking
+PROJECT_DIR := VibeTaking
+PROJECT_FILE := $(PROJECT_DIR)/VibeTaking.xcodeproj
 SCHEME := $(APP_NAME)
 CONFIGURATION := Release
-INFO_PLIST := $(PROJECT_DIR)/AutoPaste/Resources/Info.plist
-ENTITLEMENTS_FILE := $(PROJECT_DIR)/AutoPaste/Resources/AutoPaste.entitlements
+INFO_PLIST := $(PROJECT_DIR)/VibeTaking/Resources/Info.plist
+ENTITLEMENTS_FILE := $(PROJECT_DIR)/VibeTaking/Resources/VibeTaking.entitlements
 
 DERIVED_DATA := build/derived
 BUILD_APP_PATH := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME).app
@@ -12,7 +12,7 @@ RELEASE_DIR := dist/release
 RELEASE_APP := $(RELEASE_DIR)/$(APP_NAME).app
 APPLICATIONS_DIR ?= /Applications
 INSTALL_APP := $(APPLICATIONS_DIR)/$(APP_NAME).app
-APP_BUNDLE_ID := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$(INFO_PLIST)" 2>/dev/null || echo com.autopaste.app)
+APP_BUNDLE_ID := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$(INFO_PLIST)" 2>/dev/null || echo com.vibetaking.app)
 VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$(INFO_PLIST)" 2>/dev/null || echo 1.0.0)
 RELEASE_ZIP := $(RELEASE_DIR)/$(APP_NAME)-$(VERSION).zip
 
