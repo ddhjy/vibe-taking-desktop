@@ -1370,7 +1370,7 @@ private final class DraftPanelViewController: NSViewController {
     private let statusLabel = NSTextField(labelWithString: "")
     private let textView = NSTextView(frame: .zero)
     private let scrollView = NSScrollView()
-    private let placeholderLabel = NSTextField(labelWithString: "手机上的文字会出现在这里")
+    private let placeholderLabel = NSTextField(labelWithString: "开始输入...")
     private let startInputButton = NSButton(title: "开始输入", target: nil, action: nil)
     private let pasteButton = NSButton(title: "粘贴", target: nil, action: nil)
     private let settingsButton = NSButton(frame: .zero)
