@@ -1296,7 +1296,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self?.appendHistoryEntry(text: text, reason: .directPaste)
             }
-            PasteService.copyAndPaste(text: text, autoSend: autoSend)
+            PasteService.copyAndPaste(
+                text: text,
+                autoSend: autoSend,
+                preserveExistingClipboard: true
+            )
         }
         srv.onDraftUpdate = { [weak self] update in
             DispatchQueue.main.async {

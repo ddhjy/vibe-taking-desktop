@@ -9,7 +9,45 @@ enum PasteService {
         case commandReturn
     }
 
+    private struct PasteboardSnapshot {
+        struct Item {
+            let dataByType: [NSPasteboard.PasteboardType: Data]
+        }
+
+        let items: [Item]
+
+        static func capture() -> PasteboardSnapshot {
+            let pasteboard = NSPasteboard.general
+            let snapshotItems = (pasteboard.pasteboardItems ?? []).map { pasteboardItem in
+                let dataByType = pasteboardItem.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { partialResult, type in
+                    if let data = pasteboardItem.data(forType: type) {
+                        partialResult[type] = data
+                    }
+                }
+                return Item(dataByType: dataByType)
+            }
+            return PasteboardSnapshot(items: snapshotItems)
+        }
+
+        func restore() {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+
+            guard !items.isEmpty else { return }
+
+            let restoredItems = items.map { snapshotItem in
+                let item = NSPasteboardItem()
+                for (type, data) in snapshotItem.dataByType {
+                    item.setData(data, forType: type)
+                }
+                return item
+            }
+            pasteboard.writeObjects(restoredItems)
+        }
+    }
+
     private static let commandSendThreshold: TimeInterval = 0.3
+    private static let pasteboardRestoreDelay: TimeInterval = 0.12
     private static let sendStateQueue = DispatchQueue(label: "com.vibetaking.send-state")
     private static var pendingReturnWorkItem: DispatchWorkItem?
     private static var pendingReturnID: UUID?
@@ -101,6 +139,14 @@ enum PasteService {
         pasteboard.setString(text, forType: .string)
     }
 
+    private static func schedulePasteboardRestore(_ snapshot: PasteboardSnapshot?) {
+        guard let snapshot else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + pasteboardRestoreDelay) {
+            snapshot.restore()
+        }
+    }
+
     private static func copyStringAttribute(_ attribute: String, from element: AXUIElement) -> String? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
@@ -150,11 +196,14 @@ enum PasteService {
     static func copyAndPaste(
         text: String,
         autoSend: Bool,
-        targetPID: pid_t? = nil
+        targetPID: pid_t? = nil,
+        preserveExistingClipboard: Bool = false
     ) {
+        let pasteboardSnapshot = preserveExistingClipboard ? PasteboardSnapshot.capture() : nil
         writeToPasteboard(text)
 
         if performPasteMenuAction(targetPID: targetPID) {
+            schedulePasteboardRestore(pasteboardSnapshot)
             if autoSend {
                 usleep(150_000)
                 simulateSend()
@@ -164,6 +213,7 @@ enum PasteService {
 
         usleep(50_000)
         simulatePaste()
+        schedulePasteboardRestore(pasteboardSnapshot)
 
         if autoSend {
             usleep(150_000)
