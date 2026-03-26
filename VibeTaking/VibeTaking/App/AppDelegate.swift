@@ -80,6 +80,38 @@ private final class DraftHistoryStore {
     }
 }
 
+private enum LaunchAtLoginError: LocalizedError {
+    case libraryDirectoryUnavailable
+    case bundlePathUnavailable
+    case invalidConfiguration
+    case writeFailed(Error)
+    case removeFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .libraryDirectoryUnavailable:
+            return "无法定位当前用户的 LaunchAgents 目录。"
+        case .bundlePathUnavailable:
+            return "无法获取当前应用路径，暂时不能设置开机启动。"
+        case .invalidConfiguration:
+            return "生成开机启动配置时失败，请稍后重试。"
+        case .writeFailed(let error):
+            return "写入开机启动配置失败：\(error.localizedDescription)"
+        case .removeFailed(let error):
+            return "移除开机启动配置失败：\(error.localizedDescription)"
+        }
+    }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .libraryDirectoryUnavailable, .bundlePathUnavailable, .invalidConfiguration:
+            return nil
+        case .writeFailed, .removeFailed:
+            return "请确认应用对 ~/Library/LaunchAgents 目录有写权限。"
+        }
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     private static let sharedHistoryTimestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -147,6 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var port: UInt16 = 7788
     private var autoSend = false
+    private var launchAtLogin = false
     private var server: HTTPServer?
     private var serverRunning = false
     private var ipTitleResetWorkItem: DispatchWorkItem?
@@ -171,6 +204,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         historyEntries = historyStore.load()
+        synchronizeLaunchAtLoginState()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configureStatusButton()
         buildMenu()
@@ -744,6 +778,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             viewController.onChangePort = { [weak self] in
                 self?.changePort(NSMenuItem())
             }
+            viewController.onToggleLaunchAtLogin = { [weak self] isEnabled in
+                self?.setLaunchAtLoginState(isEnabled)
+            }
             viewController.onToggleAutoSend = { [weak self] isEnabled in
                 self?.setAutoSendState(isEnabled)
             }
@@ -772,9 +809,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshSettingsWindow() {
+        launchAtLogin = isLaunchAtLoginConfigured()
         settingsWindowController?.update(
             ipSummary: ipSummaryLines().joined(separator: "\n"),
             port: port,
+            launchAtLogin: launchAtLogin,
             autoSend: autoSend,
             autoSendShortcut: shortcutSummary(for: .autoSendToggle),
             inputShortcut: shortcutSummary(for: .inputToggle),
@@ -848,6 +887,127 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         server?.autoSend = autoSend
         updateIcon()
         refreshSettingsWindow()
+    }
+
+    // MARK: - Launch At Login
+
+    private var launchAgentLabel: String {
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? "com.vibetaking.app"
+        return "\(bundleIdentifier).launch-at-login"
+    }
+
+    private var launchAgentURL: URL? {
+        guard let libraryDirectory = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+
+        return libraryDirectory
+            .appendingPathComponent("LaunchAgents", isDirectory: true)
+            .appendingPathComponent("\(launchAgentLabel).plist")
+    }
+
+    private func synchronizeLaunchAtLoginState() {
+        launchAtLogin = isLaunchAtLoginConfigured()
+
+        guard launchAtLogin else { return }
+
+        do {
+            try installLaunchAtLoginAgent()
+        } catch {
+            print("Failed to refresh launch agent configuration: \(error)")
+        }
+    }
+
+    private func isLaunchAtLoginConfigured() -> Bool {
+        guard let launchAgentURL else { return false }
+        return FileManager.default.fileExists(atPath: launchAgentURL.path)
+    }
+
+    private func setLaunchAtLoginState(_ isEnabled: Bool) {
+        guard launchAtLogin != isEnabled else {
+            refreshSettingsWindow()
+            return
+        }
+
+        do {
+            if isEnabled {
+                try installLaunchAtLoginAgent()
+            } else {
+                try removeLaunchAtLoginAgent()
+            }
+
+            launchAtLogin = isEnabled
+            refreshSettingsWindow()
+        } catch {
+            launchAtLogin = isLaunchAtLoginConfigured()
+            refreshSettingsWindow()
+            showLaunchAtLoginError(error)
+        }
+    }
+
+    private func installLaunchAtLoginAgent() throws {
+        guard let launchAgentURL else {
+            throw LaunchAtLoginError.libraryDirectoryUnavailable
+        }
+
+        let bundlePath = Bundle.main.bundleURL.path
+        guard !bundlePath.isEmpty else {
+            throw LaunchAtLoginError.bundlePathUnavailable
+        }
+
+        let launchAgent: [String: Any] = [
+            "Label": launchAgentLabel,
+            "ProgramArguments": ["/usr/bin/open", "-gj", bundlePath],
+            "RunAtLoad": true
+        ]
+
+        guard PropertyListSerialization.propertyList(launchAgent, isValidFor: .xml) else {
+            throw LaunchAtLoginError.invalidConfiguration
+        }
+
+        do {
+            let fm = FileManager.default
+            try fm.createDirectory(
+                at: launchAgentURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try PropertyListSerialization.data(fromPropertyList: launchAgent, format: .xml, options: 0)
+            try data.write(to: launchAgentURL, options: .atomic)
+        } catch {
+            throw LaunchAtLoginError.writeFailed(error)
+        }
+    }
+
+    private func removeLaunchAtLoginAgent() throws {
+        guard let launchAgentURL else {
+            throw LaunchAtLoginError.libraryDirectoryUnavailable
+        }
+
+        guard FileManager.default.fileExists(atPath: launchAgentURL.path) else {
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: launchAgentURL)
+        } catch {
+            throw LaunchAtLoginError.removeFailed(error)
+        }
+    }
+
+    private func showLaunchAtLoginError(_ error: Error) {
+        let alert = NSAlert()
+        let localizedError = error as? LocalizedError
+
+        alert.alertStyle = .warning
+        alert.messageText = "无法更新开机启动"
+        alert.informativeText = localizedError?.errorDescription ?? error.localizedDescription
+
+        if let recoverySuggestion = localizedError?.recoverySuggestion, !recoverySuggestion.isEmpty {
+            alert.informativeText += "\n\n\(recoverySuggestion)"
+        }
+
+        alert.addButton(withTitle: "知道了")
+        alert.runModal()
     }
 
     // MARK: - Shortcut Configuration
@@ -1518,7 +1678,7 @@ private final class SettingsWindowController: NSWindowController {
         self.settingsViewController = settingsViewController
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -1526,8 +1686,8 @@ private final class SettingsWindowController: NSWindowController {
         window.title = "设置"
         window.contentViewController = settingsViewController
         window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 520, height: 580))
-        window.contentMinSize = NSSize(width: 520, height: 520)
+        window.setContentSize(NSSize(width: 520, height: 620))
+        window.contentMinSize = NSSize(width: 520, height: 560)
         window.center()
         super.init(window: window)
     }
@@ -1540,6 +1700,7 @@ private final class SettingsWindowController: NSWindowController {
     func update(
         ipSummary: String,
         port: UInt16,
+        launchAtLogin: Bool,
         autoSend: Bool,
         autoSendShortcut: String,
         inputShortcut: String,
@@ -1549,6 +1710,7 @@ private final class SettingsWindowController: NSWindowController {
         settingsViewController.update(
             ipSummary: ipSummary,
             port: port,
+            launchAtLogin: launchAtLogin,
             autoSend: autoSend,
             autoSendShortcut: autoSendShortcut,
             inputShortcut: inputShortcut,
@@ -1562,6 +1724,7 @@ private final class SettingsViewController: NSViewController {
     var onShowAbout: (() -> Void)?
     var onCopyNetworkInfo: (() -> Void)?
     var onChangePort: (() -> Void)?
+    var onToggleLaunchAtLogin: ((Bool) -> Void)?
     var onToggleAutoSend: ((Bool) -> Void)?
     var onShowHistory: (() -> Void)?
     var onConfigureAutoSendShortcut: (() -> Void)?
@@ -1571,6 +1734,7 @@ private final class SettingsViewController: NSViewController {
 
     private let ipValueLabel = SettingsViewController.makeDetailLabel()
     private let portValueLabel = SettingsViewController.makeDetailLabel()
+    private let launchAtLoginSwitch = NSSwitch(frame: .zero)
     private let autoSendSwitch = NSSwitch(frame: .zero)
     private let autoSendShortcutValueLabel = SettingsViewController.makeDetailLabel()
     private let inputShortcutValueLabel = SettingsViewController.makeDetailLabel()
@@ -1578,8 +1742,8 @@ private final class SettingsViewController: NSViewController {
     private let accessibilityValueLabel = SettingsViewController.makeDetailLabel()
 
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 580))
-        preferredContentSize = NSSize(width: 520, height: 580)
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 620))
+        preferredContentSize = NSSize(width: 520, height: 620)
 
         let aboutButton = Self.makeActionButton(title: "关于")
         aboutButton.target = self
@@ -1616,6 +1780,9 @@ private final class SettingsViewController: NSViewController {
             makeRow(title: "监听端口", detail: portValueLabel, accessory: changePortButton)
         ])
 
+        launchAtLoginSwitch.target = self
+        launchAtLoginSwitch.action = #selector(handleLaunchAtLoginChanged)
+
         autoSendSwitch.target = self
         autoSendSwitch.action = #selector(handleAutoSendChanged)
 
@@ -1624,6 +1791,7 @@ private final class SettingsViewController: NSViewController {
         historyButton.action = #selector(handleShowHistory)
 
         let behaviorCard = Self.makeCard(rows: [
+            makeRow(title: "开机启动", detail: Self.makeHintLabel("登录 macOS 后自动启动随心记"), accessory: launchAtLoginSwitch),
             makeRow(title: "自动发送", detail: Self.makeHintLabel("粘贴后自动按下回车发送"), accessory: autoSendSwitch),
             makeRow(title: "历史记录", detail: Self.makeHintLabel("回顾已粘贴或被替换的草稿"), accessory: historyButton)
         ])
@@ -1705,6 +1873,7 @@ private final class SettingsViewController: NSViewController {
     func update(
         ipSummary: String,
         port: UInt16,
+        launchAtLogin: Bool,
         autoSend: Bool,
         autoSendShortcut: String,
         inputShortcut: String,
@@ -1713,6 +1882,7 @@ private final class SettingsViewController: NSViewController {
     ) {
         ipValueLabel.stringValue = ipSummary.isEmpty ? "未检测到局域网地址" : ipSummary
         portValueLabel.stringValue = "\(port)"
+        launchAtLoginSwitch.state = launchAtLogin ? .on : .off
         autoSendSwitch.state = autoSend ? .on : .off
         autoSendShortcutValueLabel.stringValue = autoSendShortcut
         inputShortcutValueLabel.stringValue = inputShortcut
@@ -1725,6 +1895,7 @@ private final class SettingsViewController: NSViewController {
     @objc private func handleShowAbout() { onShowAbout?() }
     @objc private func handleCopyNetworkInfo() { onCopyNetworkInfo?() }
     @objc private func handleChangePort() { onChangePort?() }
+    @objc private func handleLaunchAtLoginChanged() { onToggleLaunchAtLogin?(launchAtLoginSwitch.state == .on) }
     @objc private func handleAutoSendChanged() { onToggleAutoSend?(autoSendSwitch.state == .on) }
     @objc private func handleShowHistory() { onShowHistory?() }
     @objc private func handleConfigureAutoSendShortcut() { onConfigureAutoSendShortcut?() }
